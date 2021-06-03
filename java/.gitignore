@@ -1,0 +1,10 @@
+client/.classpath
+client/target
+client/.settings
+server/.classpath
+server/.settings
+server/target
+common/.classpath
+common/.settings
+common/target
+.settings
