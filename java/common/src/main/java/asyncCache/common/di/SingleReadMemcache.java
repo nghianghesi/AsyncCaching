@@ -1,6 +1,9 @@
 package asyncCache.common.di;
 
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
 public interface SingleReadMemcache {
-	public String put(String flowKey, byte[] data);
-	public byte retrieve(String key);
+	public UUID put(String flowKey, byte[] data);
+	public CompletableFuture<byte[]> retrieve(UUID key);
 }

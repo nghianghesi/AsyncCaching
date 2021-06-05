@@ -1,6 +1,9 @@
 package asyncCache.common.di;
 
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
 public interface Persistence {
-	public void store(String key, byte[] data);
-	public byte[] retrieve(String key, byte[] data);
+	public CompletableFuture<UUID> store(UUID key, byte[] data);
+	public CompletableFuture<byte[]> retrieve(UUID key);
 }
