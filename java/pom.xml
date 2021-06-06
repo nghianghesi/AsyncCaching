@@ -2,12 +2,12 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>asyncCache</groupId>
-	<artifactId>asyncCache</artifactId>
+	<groupId>asyncMemManager</groupId>
+	<artifactId>asyncMemManager</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<packaging>pom</packaging>
-	<name>AsyncCache</name>
-	<description>Async Cache</description>
+	<name>asyncMemManager</name>
+	<description>Async Mem Manager</description>
 	<properties>
     <asyncCache.version>0.0.1-SNAPSHOT</asyncCache.version>
 		<maven.compiler.target>1.8</maven.compiler.target>

@@ -1,11 +1,11 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>asyncCache</groupId>
-    <artifactId>asyncCache</artifactId>
+    <groupId>asyncMemManager</groupId>
+    <artifactId>asyncMemManager</artifactId>
     <version>0.0.1-SNAPSHOT</version>
   </parent>
-  <artifactId>asyncCache.common</artifactId>
-  <name>asyncCacheCommon</name>
-  <description>async cache common</description>
+  <artifactId>asyncMemManager.common</artifactId>
+  <name>asyncMemManagerCommon</name>
+  <description>async mem manager common</description>
 </project>

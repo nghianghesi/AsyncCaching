@@ -1,6 +1,6 @@
-package asyncCache.common.di;
+package asyncMemManager.common.di;
 
-import asyncCache.common.SingleReadMemcache.Configuration;
+import asyncMemManager.common.AsyncMemManager.Configuration;
 
 public interface HotTimeCalculator {
 	public void statsWaitingTime(String flowKey, long waitingTime);

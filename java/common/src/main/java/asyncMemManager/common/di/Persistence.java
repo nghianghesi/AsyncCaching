@@ -1,9 +1,9 @@
-package asyncCache.common.di;
+package asyncMemManager.common.di;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
-public interface SingleReadMemcache {
-	public UUID put(String flowKey, byte[] data);
+public interface Persistence {
+	public CompletableFuture<UUID> store(UUID key, byte[] data);
 	public CompletableFuture<byte[]> retrieve(UUID key);
 }

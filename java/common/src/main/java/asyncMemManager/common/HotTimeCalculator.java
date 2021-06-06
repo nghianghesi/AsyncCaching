@@ -1,5 +1,5 @@
-package asyncCache.common;
+package asyncMemManager.common;
 
 public class HotTimeCalculator {
-
+	
 }
