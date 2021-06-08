@@ -2,6 +2,7 @@ package asyncMemManager.common;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.time.LocalTime;
 import java.time.temporal.ChronoField;
 import java.util.*;
@@ -9,10 +10,9 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
-import asyncMemManager.common.AsyncMemManager.ManagedObjectBase.KeyLock;
+import asyncMemManager.common.AsyncMemManager.ManagedObject.KeyLock;
 import asyncMemManager.common.di.BinarySerializer;
 
 public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManager {
@@ -20,15 +20,16 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 	private Configuration config;
 	private asyncMemManager.common.di.HotTimeCalculator coldTimeCalculator;
 	private asyncMemManager.common.di.Persistence persistence;
-	private BlockingQueue<Queue<ManagedObjectBase>> candlesPool;
-	private List<Queue<ManagedObjectBase>> candles;
-	private ConcurrentHashMap<UUID, ManagedObjectBase> map;
+	private BlockingQueue<Queue<ManagedObject>> candlesPool;
+	private List<Queue<ManagedObject>> candles;
+	private ConcurrentHashMap<UUID, ManagedObject> keyToObjectMap;
+	private ConcurrentHashMap<Object, ManagedObject> objectManageMap;
 	private long usedSize;
 	private Object usedSizeKey = new Object(); 
-	private Comparator<ManagedObjectBase> coldCacheNodeComparator = (n1, n2) -> n2.hotTime.compareTo(n1.hotTime);
+	private Comparator<ManagedObject> coldCacheNodeComparator = (n1, n2) -> n2.hotTime.compareTo(n1.hotTime);
 
 	/**
-	 * Construct Async Memcache object
+	 * Construct Async Mem Manager
 	 * @param config
 	 * @param coldTimeCalculator
 	 * @param persistence
@@ -40,7 +41,8 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 		this.config = config;
 		this.coldTimeCalculator = coldTimeCalculator;
 		this.persistence = persistence;
-		this.map = new ConcurrentHashMap<>(this.config.initialSize);
+		this.keyToObjectMap = new ConcurrentHashMap<>(this.config.initialSize);
+		this.objectManageMap = new ConcurrentHashMap<>(this.config.initialSize);
 		this.candlesPool = new PriorityBlockingQueue<>(this.config.candlePoolSize, 
 														(c1, c2) -> Integer.compare(c1.size(), c2.size()));
 		this.candles = new ArrayList<>(this.config.candlePoolSize);
@@ -48,7 +50,7 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 		// init candle pool
 		for(int i = 0; i < config.candlePoolSize; i++)
 		{
-			Queue<ManagedObjectBase> candle = new PriorityQueue<>(this.coldCacheNodeComparator);
+			Queue<ManagedObject> candle = new PriorityQueue<>(this.coldCacheNodeComparator);
 			this.candlesPool.add(candle);
 			this.candles.add(candle);
 		}
@@ -61,16 +63,17 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 	 * @param serializer
 	 * @return key for retrieve object from cache.
 	 */
+	@SuppressWarnings("unchecked")
 	@Override
-	public <T> ManagedObject<T> manage(String flowKey, T object, BinarySerializer<T> serializer) 
+	public <T> T manage(String flowKey, T object, BinarySerializer<T> serializer) 
 	{
 		// init key, mapKey, newnode
-		if (object == null)
+		if (object == null || Proxy.isProxyClass(object.getClass()))
 		{
-			return null;
+			return object;
 		}
 		
-		ManagedObject<T> managedObj = new ManagedObject<>();
+		ManagedObject managedObj = new ManagedObject();
 		managedObj.key = UUID.randomUUID();
 		managedObj.object = object;
 		managedObj.serializer = new BinarySerializerBase(serializer);
@@ -80,10 +83,10 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 		long waitDuration = this.coldTimeCalculator.calculate(this.config, flowKey);
 		managedObj.hotTime = managedObj.startTime.plus(waitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());
 		
-		this.map.put(managedObj.key, managedObj);
-
+		this.keyToObjectMap.put(managedObj.key, managedObj);
+		this.objectManageMap.put(object, managedObj);
 		// put node to candle
-		Queue<ManagedObjectBase> candle = null;
+		Queue<ManagedObject> candle = null;
 		try {
 			candle = this.candlesPool.take();
 		} catch (InterruptedException e) {
@@ -100,7 +103,9 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 		}
 		
 		new RecursiveCompletableFuture(() -> this.isOverCapability() ? this.cleanUp() : null).run();		
-		return managedObj;
+		return (T) Proxy.newProxyInstance(object.getClass().getClassLoader(),
+                new Class[] { object.getClass() },
+                managedObj.new ManagedObjectProxyHandler());
 	}
 	
 	private boolean isOverCapability()
@@ -110,10 +115,10 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 	
 	private CompletableFuture<Void> cleanUp()
 	{
-		ManagedObjectBase coldestNode = null;
-		for (Queue<ManagedObjectBase> candle : this.candles)
+		ManagedObject coldestNode = null;
+		for (Queue<ManagedObject> candle : this.candles)
 		{
-			ManagedObjectBase node = candle.peek();
+			ManagedObject node = candle.peek();
 			if (node != null)
 			{
 				if (coldestNode == null || coldCacheNodeComparator.compare(coldestNode, node) > 0)
@@ -140,7 +145,7 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 			// coldestNode was removed from candles so, never duplicate persistence.
 			if (coldestNode != null)
 			{
-				final ManagedObjectBase persistedNode = coldestNode;
+				final ManagedObject persistedNode = coldestNode;
 				final CompletableFuture<Void> res = new CompletableFuture<>();
 				this.persistence.store(coldestNode.key, coldestNode.serializer.serialize(coldestNode.object))
 				.thenRun(()->{
@@ -189,23 +194,28 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 		}
 	}
 	
-	abstract class ManagedObjectBase
+	class ManagedObject
 	{
 		UUID key;
 		Object object;
 		LocalTime startTime;
 		LocalTime hotTime;
 		long estimatedSize;
-		Queue<ManagedObjectBase> containerCandle;
+		Queue<ManagedObject> containerCandle;
 		BinarySerializerBase serializer;
-		
-		private int acceessCounter = 0;
-		KeyLock lockRead()
+
+		@Override
+		protected void finalize() throws Throwable {
+			// TODO Auto-generated method stub			
+		}
+	
+		private int accessCounter = 0;
+		ReadKeyLock lockRead()
 		{
 			while (true)
 			{
 				synchronized (this.key) {
-					if (this.acceessCounter <= 0)
+					if (this.accessCounter <= 0)
 					{
 						return new ReadKeyLock();
 					}
@@ -214,12 +224,12 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 			}				
 		}
 		
-		KeyLock lockManage()
+		ManageKeyLock lockManage()
 		{
 			while (true)
 			{
 				synchronized (this.key) {
-					if (this.acceessCounter == 0)
+					if (this.accessCounter == 0)
 					{
 						return new ManageKeyLock();
 					}
@@ -234,15 +244,15 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 			
 			KeyLock()
 			{
-				ManagedObjectBase.this.acceessCounter += this.lockFactor();
+				ManagedObject.this.accessCounter += this.lockFactor();
 			}
 
 			void unlock() {
-				synchronized (ManagedObjectBase.this.key) {
+				synchronized (ManagedObject.this.key) {
 					if (!this.unlocked)
 					{
 						this.unlocked = true;
-						ManagedObjectBase.this.acceessCounter -= this.lockFactor();
+						ManagedObject.this.accessCounter -= this.lockFactor();
 					}
 				}					
 			}	
@@ -262,6 +272,11 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 			int lockFactor() {
 				return 1;
 			}
+			
+			public ManageKeyLock upgradeToManageLock() {
+				this.unlock();
+				return ManagedObject.this.lockManage();
+			}
 		}
 		
 		class ManageKeyLock extends KeyLock
@@ -269,29 +284,35 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 			@Override
 			int lockFactor() {
 				return -1;
-			}			
-		}
-	}
-	
-	public class ManagedObject<T> extends ManagedObjectBase implements InvocationHandler
-	{		
-		@Override
-		protected void finalize() throws Throwable {
-			// TODO Auto-generated method stub
-			
-		}
-
-		@Override
-		public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-			// TODO Auto-generated method stub
-			KeyLock keylock = this.lockRead();
-			if (this.object == null) {
-				//this.object = AsyncMemManager.this.persistence.retrieve(this.key);
 			}
-			Object res = method.invoke(object, args);
-			keylock.unlock();
-			return res;
+			
+			public ReadKeyLock downgradeReadKeyLock () {
+				this.unlock();
+				return ManagedObject.this.lockRead();
+			}
 		}
+		
+		class ManagedObjectProxyHandler implements InvocationHandler
+		{
+			@Override
+			public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+				ReadKeyLock keylock = ManagedObject.this.lockRead();
+				
+				if (ManagedObject.this.object == null) {
+					ManageKeyLock manageLock = keylock.upgradeToManageLock();
+					if(ManagedObject.this.object == null)
+					{
+						ManagedObject.this.object = AsyncMemManager.this.persistence.retrieve(ManagedObject.this.key);
+					}
+					
+					keylock = manageLock.downgradeReadKeyLock();
+				}
+				
+				Object res = method.invoke(object, args);
+				keylock.unlock();
+				return res;			
+			}
+		}		
 	}
 	
 	private static class RecursiveCompletableFuture
