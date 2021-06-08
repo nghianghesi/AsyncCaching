@@ -13,6 +13,8 @@
 		<maven.compiler.target>1.8</maven.compiler.target>
 		<maven.compiler.source>1.8</maven.compiler.source>
     <java.version>1.8</java.version>		
+    
+    <openjdk.jol.version>0.16</openjdk.jol.version>    
 	</properties>
   <parent>
     <groupId>org.springframework.boot</groupId>
