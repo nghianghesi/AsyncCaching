@@ -9,11 +9,5 @@
   <name>asyncMemManagerCommon</name>
   <description>async mem manager common</description>
   <dependencies>
-	  <dependency>
-	    <groupId>org.openjdk.jol</groupId>
-	    <artifactId>jol-core</artifactId>
-	    <version>${openjdk.jol.version}</version>
-	    <scope>provided</scope>
-		</dependency>
   </dependencies>
 </project>
