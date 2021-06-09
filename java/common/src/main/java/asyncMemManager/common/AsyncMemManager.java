@@ -8,9 +8,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 import asyncMemManager.common.AsyncMemManager.ManagedObjectBase.KeyLock;
+import asyncMemManager.common.AsyncMemManager.ManagedObjectBase.ManageKeyLock;
+import asyncMemManager.common.AsyncMemManager.ManagedObjectBase.ReadKeyLock;
 import asyncMemManager.common.di.BinarySerializer;
 
 public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManager {
@@ -21,8 +24,7 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 	private BlockingQueue<ManagedObjectQueue> candlesPool;
 	private List<ManagedObjectQueue> candles;
 	private ConcurrentHashMap<UUID, ManagedObjectBase> keyToObjectMap;
-	private long usedSize;
-	private Object usedSizeKey = new Object(); 
+	private AtomicLong usedSize;
 	private Comparator<ManagedObjectBase> coldCacheNodeComparator = (n1, n2) -> n2.hotTime.compareTo(n1.hotTime);
 
 	/**
@@ -48,7 +50,7 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 		// init candle pool
 		for(int i = 0; i < config.candlePoolSize; i++)
 		{
-			ManagedObjectQueue candle = new ManagedObjectQueue(initcandleSize, this.coldCacheNodeComparator);
+			ManagedObjectQueue candle = new ManagedObjectQueue(initcandleSize, this.coldCacheNodeComparator); // thread-safe ensured by candlesPool
 			this.candlesPool.add(candle);
 			this.candles.add(candle);
 		}
@@ -70,9 +72,7 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 			return null;
 		}
 		
-		ManagedObject<T> managedObj = new ManagedObject<T>();
-		managedObj.key = UUID.randomUUID();
-		managedObj.object = object;
+		ManagedObject<T> managedObj = new ManagedObject<T>(object);
 		managedObj.serializer = new BinarySerializerBase(serializer);
 		managedObj.startTime = LocalTime.now();
 		managedObj.estimatedSize = serializer.estimateObjectSize(object);
@@ -93,44 +93,47 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 			return;
 		}
 
-		synchronized (candle) {
-			candle.add(managedObj);
-			managedObj.containerCandle = candle;						
-		}		
+
+		KeyLock lock = managedObj.lockManage();
+		candle.add(managedObj);
+		managedObj.containerCandle = candle;
+		lock.unlock();
 		
-		synchronized (this.usedSizeKey) {
-			this.usedSize += managedObj.estimatedSize;
+		this.usedSize.addAndGet(managedObj.estimatedSize);
+		
+		if (this.isOverCapability())
+		{
+			new RecursiveCleanup(() -> this.isOverCapability() ? this.cleanUp() : null).run();
 		}
-		
-		new RecursiveCleanup(() -> this.isOverCapability() ? this.cleanUp() : null).run();	
 	}
 	
-	private void stopTracking(ManagedObjectBase managedObj) {		
-		if (managedObj != null)
-		{		
-			if (managedObj.containerCandle != null) {
-				while(!this.candlesPool.remove(managedObj.containerCandle))
-				{
-					Thread.yield();
-				}			
-				
-				KeyLock lock = managedObj.lockManage();
-				ManagedObjectQueue candle = managedObj.containerCandle;
-				managedObj.containerCandle.removeAt(managedObj.candleIndex);
-				managedObj.containerCandle = null;				
-				lock.unlock();
-	
-				this.candlesPool.add(candle);
-			}
+	private void stopTracking(ManagedObjectBase managedObj) {
+		if (managedObj.containerCandle != null) {
+			while(!this.candlesPool.remove(managedObj.containerCandle))
+			{
+				Thread.yield();
+			}			
 			
-			this.keyToObjectMap.remove(managedObj.key);
-			this.persistence.remove(managedObj.key);
-		}		
+			KeyLock lock = managedObj.lockManage();
+			ManagedObjectQueue candle = managedObj.containerCandle;
+			managedObj.containerCandle.removeAt(managedObj.candleIndex);
+			managedObj.containerCandle = null;
+			if(managedObj != null)
+			{
+				this.usedSize.addAndGet(-managedObj.estimatedSize);
+			}
+			lock.unlock();
+
+			this.candlesPool.add(candle);
+		}
+		
+		this.keyToObjectMap.remove(managedObj.key);
+		this.persistence.remove(managedObj.key);
 	}
 	
 	private boolean isOverCapability()
 	{
-		return this.usedSize > 0 && this.usedSize > this.config.capacity;
+		return this.usedSize.get() > this.config.capacity;
 	}
 	
 	private CompletableFuture<Void> cleanUp()
@@ -168,17 +171,13 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 				final ManagedObjectBase persistedNode = coldestNode;
 				final CompletableFuture<Void> res = new CompletableFuture<>();
 				this.persistence.store(coldestNode.key, coldestNode.serializer.serialize(coldestNode.object))
-				.thenRun(()->{
-					
+				.thenRun(()->{					
 					// synchronized to ensure retrieve never return null
 					KeyLock keylock = persistedNode.lockManage();
 					persistedNode.object = null;
 					keylock.unlock();
 					
-					synchronized (this.usedSizeKey) {
-						this.usedSize -= persistedNode.estimatedSize;
-					}
-					
+					this.usedSize.addAndGet(-persistedNode.estimatedSize);					
 					res.complete(null);
 				});
 				return res;
@@ -236,7 +235,7 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 			AsyncMemManager.this.stopTracking(this);
 		}
 	
-		private int accessCounter = 0;
+		private int accessCounter = 0;		
 		ReadKeyLock lockRead()
 		{
 			while (true)
@@ -281,16 +280,8 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 						this.unlocked = true;
 						ManagedObjectBase.this.accessCounter -= this.lockFactor();
 					}
-				}					
-			}	
-			
-			@Override
-			protected void finalize() throws Throwable {
-				if (this.unlocked)
-				{
-					this.unlock();
 				}
-			}		
+			}	
 		}			
 		
 		class ReadKeyLock extends KeyLock
@@ -322,16 +313,10 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 	
 	class ManagedObject<T> extends ManagedObjectBase
 	{
-		@SuppressWarnings("unchecked")
-		public T setup()
+		public ManagedObject(T obj)
 		{
-			return (T)this.object;
-		}
-		
-		@SuppressWarnings("unchecked")
-		public CompletableFuture<T> async()
-		{
-			return  CompletableFuture.completedFuture((T)this.object);
+			this.object = obj;
+			this.key = UUID.randomUUID();
 		}
 	}
 	
@@ -341,6 +326,27 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 		AsyncObject(ManagedObject<T> managedObject) {
 			this.managedObject = managedObject;			
 			this.managedObject.asyncCounter.addAndGet(1);
+		}
+		
+		@SuppressWarnings("unchecked")
+		public CompletableFuture<T> o(){
+			ReadKeyLock lock = this.managedObject.lockRead();
+			CompletableFuture<T> res;
+			if (this.managedObject.object != null)
+			{
+				res = CompletableFuture.completedFuture((T)this.managedObject.object);				
+			}else {
+				ManageKeyLock manageLock = lock.upgradeToManageLock();
+				if (this.managedObject.object == null) 
+				{
+					this.managedObject.object = this.managedObject.serializer.deserialize(AsyncMemManager.this.persistence.retrieve(this.managedObject.key));					
+				} 
+				
+				lock = manageLock.downgradeReadKeyLock();
+				res = CompletableFuture.completedFuture((T)this.managedObject.object);
+			}
+			lock.unlock();
+			return res;
 		}
 		
 		@Override
@@ -363,10 +369,16 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 		public AsyncObject<T> asyncObject(){
 			return new AsyncObject<T>(this.managedObject);
 		}
+		
+		@SuppressWarnings("unchecked")
+		public T o() {
+			return (T) managedObject.object;
+		}
 
 		@Override
 		public void close() throws Exception {
-			if (this.managedObject.setupCounter.addAndGet(-1) == 0)
+			if (this.managedObject.asyncCounter.get() > 0 
+					&& this.managedObject.setupCounter.addAndGet(-1) == 0)
 			{
 				this.managedObject.startTracking();
 			}
@@ -417,7 +429,6 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 		ManagedObjectBase[] queue;
 	    private int size = 0;
 	    private final Comparator<ManagedObjectBase> comparator;
-	    int modCount = 0;
 	    
 	    public ManagedObjectQueue(int initSize, Comparator<ManagedObjectBase> comparator) {
 	        this.queue = new ManagedObjectBase[initSize];
@@ -439,7 +450,7 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 	        if (minCapacity < 0) // overflow
 	            throw new OutOfMemoryError();
 	        return (minCapacity > MAX_ARRAY_SIZE) ? Integer.MAX_VALUE : MAX_ARRAY_SIZE;
-	    }    
+	    }
 	    
 	    public ManagedObjectBase peek() {
 	        return (size == 0) ? null : queue[0];
@@ -449,7 +460,6 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 	        if (size == 0)
 	            return null;
 	        int s = --size;
-	        modCount++;
 	        ManagedObjectBase result = queue[0];
 	        ManagedObjectBase x = queue[s];
 	        queue[s] = null;
@@ -461,7 +471,6 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 	    public boolean add(ManagedObjectBase e) {
 	        if (e == null)
 	            throw new NullPointerException();
-	        modCount++;
 	        int i = size;
 	        if (i >= queue.length)
 	            grow(i + 1);
@@ -475,7 +484,6 @@ public class AsyncMemManager implements asyncMemManager.common.di.AsyncMemManage
 
 	    private ManagedObjectBase removeAt(int i) {
 	        // assert i >= 0 && i < size;
-	        modCount++;
 	        int s = --size;
 	        if (s == i) // removed last element
 	            queue[i] = null;
