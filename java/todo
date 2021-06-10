@@ -5,3 +5,4 @@
 - async retrieve
 - multiple waiting time stats.
 - thread to cleanup timeout elements.
+- calculate hottime.

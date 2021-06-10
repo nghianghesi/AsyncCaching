@@ -1,6 +1,6 @@
 package asyncMemManager.common.di;
 
-import asyncMemManager.common.AsyncMemManager.Configuration;
+import asyncMemManager.common.Configuration;
 
 public interface HotTimeCalculator {
 	public void statsWaitingTime(String flowKey, long waitingTime);

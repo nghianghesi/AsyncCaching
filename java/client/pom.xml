@@ -6,4 +6,11 @@
     <version>0.0.1-SNAPSHOT</version>
   </parent>
   <artifactId>asyncMemManager.client</artifactId>
+  <dependencies>
+    <dependency>
+	    <groupId>asyncMemManager</groupId>
+	    <artifactId>asyncMemManager.common</artifactId>
+	    <version>${asyncMemManager.version}</version>
+    </dependency>
+  </dependencies>
 </project>
