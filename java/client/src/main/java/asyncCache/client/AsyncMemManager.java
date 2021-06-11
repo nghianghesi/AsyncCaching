@@ -11,6 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 
 import asyncCache.client.AsyncMemManager.ManagedObjectBase.KeyLock;
 import asyncCache.client.AsyncMemManager.ManagedObjectBase.ManageKeyLock;
@@ -386,9 +387,10 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		/**
 		 * key lock for read/manage.
 		 */
-		abstract class KeyLock {
+		abstract class KeyLock implements AutoCloseable{
 			protected boolean unlocked = false;
 			abstract int lockFactor();
+			protected KeyLock updownLock = null;
 			
 			KeyLock()
 			{
@@ -396,14 +398,30 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 			}
 
 			void unlock() {
-				synchronized (ManagedObjectBase.this.key) {
-					if (!this.unlocked)
-					{
-						this.unlocked = true;
-						ManagedObjectBase.this.accessCounter -= this.lockFactor();
+				if(updownLock != null)
+				{
+					this.updownLock.unlock();
+				}else {
+					synchronized (ManagedObjectBase.this.key) {
+						if (!this.unlocked)
+						{
+							this.unlocked = true;
+							ManagedObjectBase.this.accessCounter -= this.lockFactor();
+						}
 					}
 				}
 			}	
+			
+			@Override
+			public void close() throws Exception {
+				if (this.updownLock!=null)
+				{
+					this.updownLock.close();
+				}else if ( !this.unlocked)
+				{
+					this.unlock();
+				}				
+			}
 		}			
 		
 		/**
@@ -416,9 +434,9 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				return 1;
 			}
 			
-			public ManageKeyLock upgradeToManageLock() {
+			public void upgradeToManageLock() {
 				this.unlock();
-				return ManagedObjectBase.this.lockManage();
+				this.updownLock = ManagedObjectBase.this.lockManage(); 
 			}
 		}
 		
@@ -432,9 +450,9 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				return -1;
 			}
 			
-			public ReadKeyLock downgradeReadKeyLock () {
+			public void downgradeReadKeyLock () {
 				this.unlock();
-				return ManagedObjectBase.this.lockRead();
+				this.updownLock = ManagedObjectBase.this.lockRead();
 			}
 		}
 	}
@@ -464,29 +482,43 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		
 		@SuppressWarnings("unchecked")
 		public CompletableFuture<T> o(){
-			ReadKeyLock lock = this.managedObject.lockRead();
+			final ReadKeyLock lock = this.managedObject.lockRead();
 			CompletableFuture<T> res;
 			if (this.managedObject.object != null)
 			{
-				final ReadKeyLock keylock = lock;
 				res = CompletableFuture
-						.completedFuture((T)this.managedObject.object)
-						.whenComplete((r, e) ->{ keylock.unlock();});				
+						.completedFuture((T)this.managedObject.object);				
 			}else {
-				ManageKeyLock manageLock = lock.upgradeToManageLock();
+				lock.upgradeToManageLock();
 				if (this.managedObject.object == null) 
 				{
 					this.managedObject.object = this.managedObject.serializer.deserialize(AsyncMemManager.this.persistence.retrieve(this.managedObject.key));					
 					
 				} 
 				
-				final ReadKeyLock keylock = manageLock.downgradeReadKeyLock();
 				res = CompletableFuture
-						.completedFuture((T)this.managedObject.object)
-						.whenComplete((r, e) ->{ keylock.unlock();});
+						.completedFuture((T)this.managedObject.object);
 			}
-			
+			res.whenComplete((r, e) ->{ lock.unlock();});
 			return res;
+		}
+		
+		@SuppressWarnings("unchecked")
+		public <R> R a(Function<T,R>f) throws Exception {
+			try(ReadKeyLock lock = this.managedObject.lockRead()){
+				if (this.managedObject.object == null)
+				{
+					lock.upgradeToManageLock();
+					if (this.managedObject.object == null) 
+					{
+						this.managedObject.object = this.managedObject.serializer.deserialize(AsyncMemManager.this.persistence.retrieve(this.managedObject.key));
+					}
+				}
+				
+				R res = f.apply((T)this.managedObject.object);
+				lock.unlock();
+				return res;
+			}
 		}
 		
 		@Override

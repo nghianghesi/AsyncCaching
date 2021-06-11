@@ -53,7 +53,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 			ManagedObjectQueue<CacheData> candle = new ManagedObjectQueue<>(initcandleSize, this.cacheNodeComparator); // thread-safe ensured by candlesPool
 			this.candlesPool.add(candle);
 			this.candles.add(candle);
-		}		
+		}
 	}
 	
 	public void cache(String flowKey, UUID key, byte[] data) 
