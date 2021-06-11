@@ -23,14 +23,15 @@ import asyncMemManager.common.di.IndexableQueuedObject;
 public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, AutoCloseable {
 	
 	private Configuration config;
-	private asyncMemManager.common.di.HotTimeCalculator coldTimeCalculator;
+	private asyncMemManager.common.di.HotTimeCalculator hotTimeCalculator;
 	private asyncMemManager.common.di.Persistence persistence;
 	private BlockingQueue<ManagedObjectQueue<ManagedObjectBase>> candlesPool;
 	private List<ManagedObjectQueue<ManagedObjectBase>> candles;
 	private ConcurrentHashMap<UUID, ManagedObjectBase> keyToObjectMap;
 	private AtomicLong usedSize;
-	private Comparator<ManagedObjectBase> coldCacheNodeComparator = (n1, n2) -> n2.hotTime.compareTo(n1.hotTime);
+	private Comparator<ManagedObjectBase> cacheNodeComparator = (n1, n2) -> n2.hotTime.compareTo(n1.hotTime);
 
+	//single threads to avoid collision, also, give priority to other flows
 	private ExecutorService manageExecutor = Executors.newFixedThreadPool(1);
 	private ExecutorService cleaningExecutor = Executors.newFixedThreadPool(1);
 	
@@ -45,7 +46,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 								asyncMemManager.common.di.Persistence persistence) 
 	{
 		this.config = config;
-		this.coldTimeCalculator = coldTimeCalculator;
+		this.hotTimeCalculator = coldTimeCalculator;
 		this.persistence = persistence;
 		this.keyToObjectMap = new ConcurrentHashMap<>(this.config.getInitialSize());
 		this.candlesPool = new PriorityBlockingQueue<>(this.config.getCandlePoolSize(), 
@@ -57,7 +58,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		// init candle pool
 		for(int i = 0; i < config.getCandlePoolSize(); i++)
 		{
-			ManagedObjectQueue<ManagedObjectBase> candle = new ManagedObjectQueue<>(initcandleSize, this.coldCacheNodeComparator); // thread-safe ensured by candlesPool
+			ManagedObjectQueue<ManagedObjectBase> candle = new ManagedObjectQueue<>(initcandleSize, this.cacheNodeComparator); // thread-safe ensured by candlesPool
 			this.candlesPool.add(candle);
 			this.candles.add(candle);
 		}
@@ -84,7 +85,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		managedObj.startTime = LocalTime.now();
 		managedObj.estimatedSize = serializer.estimateObjectSize(object);
 		
-		long waitDuration = this.coldTimeCalculator.calculate(this.config, flowKey);
+		long waitDuration = this.hotTimeCalculator.calculate(this.config, flowKey);
 		managedObj.hotTime = managedObj.startTime.plus(waitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());	
 		return new SetupObject<T>(managedObj);
 	}
@@ -207,7 +208,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				ManagedObjectBase node = candle.peek();
 				if (node != null)
 				{
-					if (coldestNode == null || coldCacheNodeComparator.compare(coldestNode, node) > 0)
+					if (coldestNode == null || cacheNodeComparator.compare(coldestNode, node) > 0)
 					{
 						coldestNode = node;
 					}
@@ -224,37 +225,38 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 						Thread.yield();
 					}				
 					
-					if (coldestNode.containerCandle == coldestCandle)
+					if (coldestNode.containerCandle == coldestCandle && coldestNode == coldestCandle.peek())
 					{
-						if (coldestNode == coldestCandle.peek())
+						coldestNode = coldestCandle.poll();						
+						coldestNode.containerCandle = null;	
+						this.candlesPool.offer(coldestCandle);
+						
+						// coldestNode was removed from candles so, never duplicate persistence.
+						final ManagedObjectBase persistedNode = coldestNode;
+						
+						final KeyLock lock = persistedNode.lockManage();
+						if (persistedNode.asyncCounter.get()>0)
 						{
-							coldestNode = coldestCandle.poll();						
-							coldestNode.containerCandle = null;	
-							this.candlesPool.offer(coldestCandle);
-							
-							// coldestNode was removed from candles so, never duplicate persistence.
-							final ManagedObjectBase persistedNode = coldestNode;
 							this.persistence.store(coldestNode.key, coldestNode.serializer.serialize(coldestNode.object))
 							.thenRunAsync(()->{					
 								// synchronized to ensure retrieve never return null
-								KeyLock keylock = persistedNode.lockManage();
-								persistedNode.object = null;
-								keylock.unlock();
-								
+								persistedNode.object = null;								
 								this.usedSize.addAndGet(-persistedNode.estimatedSize);
 							}, this.cleaningExecutor)
 							.whenComplete((o, e)->{
+								lock.unlock();
 								this.waitingForPersistence = false;
 								this.cleanUp();
 							});
 							
+							this.candlesPool.offer(coldestCandle);
 							return;
 						}else {
-							this.candlesPool.offer(coldestCandle);
+							lock.unlock();
 						}
-					}else {
-						this.candlesPool.add(coldestCandle);
 					}
+					
+					this.candlesPool.add(coldestCandle);
 				}
 			}
 		}
@@ -466,7 +468,10 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 			CompletableFuture<T> res;
 			if (this.managedObject.object != null)
 			{
-				res = CompletableFuture.completedFuture((T)this.managedObject.object);				
+				final ReadKeyLock keylock = lock;
+				res = CompletableFuture
+						.completedFuture((T)this.managedObject.object)
+						.whenComplete((r, e) ->{ keylock.unlock();});				
 			}else {
 				ManageKeyLock manageLock = lock.upgradeToManageLock();
 				if (this.managedObject.object == null) 
@@ -475,10 +480,12 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 					
 				} 
 				
-				lock = manageLock.downgradeReadKeyLock();
-				res = CompletableFuture.completedFuture((T)this.managedObject.object);
+				final ReadKeyLock keylock = manageLock.downgradeReadKeyLock();
+				res = CompletableFuture
+						.completedFuture((T)this.managedObject.object)
+						.whenComplete((r, e) ->{ keylock.unlock();});
 			}
-			lock.unlock();
+			
 			return res;
 		}
 		
