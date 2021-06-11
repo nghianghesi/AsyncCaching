@@ -14,7 +14,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 import asyncCache.client.AsyncMemManager.ManagedObjectBase.KeyLock;
-import asyncCache.client.AsyncMemManager.ManagedObjectBase.ManageKeyLock;
 import asyncCache.client.AsyncMemManager.ManagedObjectBase.ReadKeyLock;
 import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
@@ -203,21 +202,22 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		this.waitingForPersistence = true;
 		while (this.isOverCapability())
 		{
-			ManagedObjectBase coldestNode = null;
+			ManagedObjectQueue<ManagedObjectBase>.PollCandidate coldestCandidate = null;
 			for (ManagedObjectQueue<ManagedObjectBase> candle : this.candles)
 			{
-				ManagedObjectBase node = candle.peek();
+				ManagedObjectQueue<ManagedObjectBase>.PollCandidate node = candle.getPollCandidate();
 				if (node != null)
 				{
-					if (coldestNode == null || cacheNodeComparator.compare(coldestNode, node) > 0)
+					if (coldestCandidate == null || cacheNodeComparator.compare(coldestCandidate.getObject(), node.getObject()) > 0)
 					{
-						coldestNode = node;
+						coldestCandidate = node;
 					}
 				}
 			}
 			
-			if (coldestNode != null)
+			if (coldestCandidate != null)
 			{			
+				ManagedObjectBase coldestNode = coldestCandidate.getObject();
 				ManagedObjectQueue<ManagedObjectBase> coldestCandle = coldestNode.containerCandle;
 				if (coldestCandle != null)
 				{
@@ -226,40 +226,50 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 						Thread.yield();
 					}				
 					
-					if (coldestNode.containerCandle == coldestCandle && coldestNode == coldestCandle.peek())
+					if (coldestNode.containerCandle == coldestCandle)
 					{
-						coldestNode = coldestCandle.poll();						
-						coldestNode.containerCandle = null;	
-						this.candlesPool.offer(coldestCandle);
-						
-						// coldestNode was removed from candles so, never duplicate persistence.
-						final ManagedObjectBase persistedNode = coldestNode;
-						
-						final KeyLock lock = persistedNode.lockManage();
-						if (persistedNode.asyncCounter.get()>0)
+						coldestNode = coldestCandle.removeAt(coldestCandidate.getIdx());
+						if (coldestCandidate.getObject() == coldestNode)
 						{
-							this.persistence.store(coldestNode.key, coldestNode.serializer.serialize(coldestNode.object))
-							.thenRunAsync(()->{					
-								// synchronized to ensure retrieve never return null
-								persistedNode.object = null;								
-								this.usedSize.addAndGet(-persistedNode.estimatedSize);
-							}, this.cleaningExecutor)
-							.whenComplete((o, e)->{
-								lock.unlock();
-								this.waitingForPersistence = false;
-								this.cleanUp();
-							});
-							
+							coldestNode.containerCandle = null;	
 							this.candlesPool.offer(coldestCandle);
-							return;
+							
+							// coldestNode was removed from candles so, never duplicate persistence.
+							final ManagedObjectBase persistedNode = coldestNode;
+							
+							final KeyLock lock = persistedNode.lockManage();
+							if (persistedNode.asyncCounter.get()>0)
+							{
+								this.persistence.store(coldestNode.key, coldestNode.serializer.serialize(coldestNode.object))
+								.thenRunAsync(()->{					
+									// synchronized to ensure retrieve never return null
+									persistedNode.object = null;								
+									this.usedSize.addAndGet(-persistedNode.estimatedSize);
+								}, this.cleaningExecutor)
+								.whenComplete((o, e)->{
+									lock.unlock();
+									this.waitingForPersistence = false;
+									this.cleanUp();
+								});
+								
+								// add back to pool after processing
+								this.candlesPool.offer(coldestCandle);
+								return;
+							}else {
+								lock.unlock();
+							}
 						}else {
-							lock.unlock();
+							// add back if not processing
+							coldestCandle.add(coldestNode);
 						}
 					}
 					
+					// add back to pool if not processing
 					this.candlesPool.add(coldestCandle);
 				}
 			}
+			
+			Thread.yield();
 		}
 		
 		this.waitingForPersistence = false;
@@ -347,6 +357,11 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		public void setIndexInQueue(int idx)
 		{
 			this.candleIndex = idx;
+		}
+		
+		@Override
+		public boolean isPeekable() {
+			return this.accessCounter == 0;
 		}
 		
 		/**
@@ -480,8 +495,11 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 			this.managedObject.asyncCounter.addAndGet(1);
 		}
 		
+		/**
+		 * provide original object asynchronously.
+		 */
 		@SuppressWarnings("unchecked")
-		public CompletableFuture<T> o(){
+		public <R> CompletableFuture<R> async(Function<T,R> f){
 			final ReadKeyLock lock = this.managedObject.lockRead();
 			CompletableFuture<T> res;
 			if (this.managedObject.object != null)
@@ -499,12 +517,14 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				res = CompletableFuture
 						.completedFuture((T)this.managedObject.object);
 			}
-			res.whenComplete((r, e) ->{ lock.unlock();});
-			return res;
+			return res.thenApplyAsync((o) -> f.apply(o)).whenComplete((r, e) -> lock.unlock());
 		}
 		
+		/**
+		 * run method provided by caller synchronously  
+		 */
 		@SuppressWarnings("unchecked")
-		public <R> R a(Function<T,R>f) throws Exception {
+		public <R> R apply(Function<T,R> f) throws Exception {
 			try(ReadKeyLock lock = this.managedObject.lockRead()){
 				if (this.managedObject.object == null)
 				{

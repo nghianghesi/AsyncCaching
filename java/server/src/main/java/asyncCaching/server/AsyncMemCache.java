@@ -122,21 +122,22 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		this.waitingForPersistence = true;
 		while (this.isOverCapability())
 		{
-			CacheData coldestNode = null;
+			ManagedObjectQueue<CacheData>.PollCandidate coldestCandidate = null;
 			for (ManagedObjectQueue<CacheData> candle : this.candles)
 			{
-				CacheData node = candle.peek();
+				ManagedObjectQueue<CacheData>.PollCandidate node = candle.getPollCandidate();
 				if (node != null)
 				{
-					if (coldestNode == null || cacheNodeComparator.compare(coldestNode, node) > 0)
+					if (coldestCandidate == null || cacheNodeComparator.compare(coldestCandidate.getObject(), node.getObject()) > 0)
 					{
-						coldestNode = node;
+						coldestCandidate = node;
 					}
 				}
 			}
 			
-			if (coldestNode != null)
+			if (coldestCandidate != null)
 			{			
+				CacheData coldestNode = coldestCandidate.getObject();
 				ManagedObjectQueue<CacheData> coldestCandle = coldestNode.containerCandle;
 				if (coldestCandle != null)
 				{
@@ -145,38 +146,47 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 						Thread.yield();
 					}				
 					
-					if (coldestNode.containerCandle == coldestCandle && coldestNode == coldestCandle.peek())
+					if (coldestNode.containerCandle == coldestCandle)
 					{
-						coldestNode = coldestCandle.poll();						
-						coldestNode.containerCandle = null;	
-						this.candlesPool.offer(coldestCandle);
-						
-						// coldestNode was removed from candles so, never duplicate persistence.
-						final CacheData persistedNode = coldestNode;
-						final int datasize = coldestNode.data.length;
-						this.persistence.store(coldestNode.key, coldestNode.data)
-						.thenRunAsync(()->{					
-							// synchronized to ensure retrieve never return null							
-							synchronized (persistedNode.key) {
-								persistedNode.data = null;	
-							}
+						coldestNode = coldestCandle.removeAt(coldestCandidate.getIdx());
+						if (coldestNode == coldestCandidate.getObject())
+						{
+							coldestNode.containerCandle = null;	
+							this.candlesPool.offer(coldestCandle);
 							
-							this.usedSize.addAndGet(-datasize);
-						}, this.cleaningExecutor)
-						.whenComplete((o, e)->{
-							this.waitingForPersistence = false;
-							this.cleanUp();
-						});
-						
-						this.candlesPool.add(coldestCandle);
-						return;
+							// coldestNode was removed from candles so, never duplicate persistence.
+							final CacheData persistedNode = coldestNode;
+							final int datasize = coldestNode.data.length;
+							this.persistence.store(coldestNode.key, coldestNode.data)
+							.thenRunAsync(()->{					
+								// synchronized to ensure retrieve never return null							
+								synchronized (persistedNode.key) {
+									persistedNode.data = null;	
+								}
+								
+								this.usedSize.addAndGet(-datasize);
+							}, this.cleaningExecutor)
+							.whenComplete((o, e)->{
+								this.waitingForPersistence = false;
+								this.cleanUp();
+							});
+							
+							// add back to pool after processing
+							this.candlesPool.add(coldestCandle);
+							return;
+						}else {
+							// add node back if not processed
+							coldestCandle.add(coldestNode);
+						}
 					}
+					
+					// add back to pool if node not processed
 					this.candlesPool.add(coldestCandle);
 				}
 			}
-		
-			this.waitingForPersistence = false;
+			Thread.yield();
 		}
+		this.waitingForPersistence = false;
 	}
 	
 	class CacheData implements IndexableQueuedObject
@@ -216,6 +226,12 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		public void setIndexInQueue(int idx)
 		{
 			this.candleIndex = idx;
+		}
+
+		@Override
+		public boolean isPeekable() {
+			// TODO Auto-generated method stub
+			return true;
 		}
 	}
 }

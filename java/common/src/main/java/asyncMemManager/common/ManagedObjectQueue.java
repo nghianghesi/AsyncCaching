@@ -8,6 +8,7 @@ import asyncMemManager.common.di.IndexableQueuedObject;
 public class ManagedObjectQueue<T extends IndexableQueuedObject> {
 
 	private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+	private static final int MAX_POLL_CANDIDATE_CHECK_RANGE = 5;
 	
 	Object[] queue;
     private int size = 0;
@@ -36,23 +37,17 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
     }
     
     @SuppressWarnings("unchecked")
-	public T peek() {
-        return (size == 0) ? null : (T)queue[0];
+	public PollCandidate getPollCandidate() {
+    	// size expected much higher than MAX_POLL_CANDIDATE_CHECK_RANGE, so there should be thread-safe index out of range issue
+        for (int i=0; i<MAX_POLL_CANDIDATE_CHECK_RANGE && i<this.size; i++)
+        {
+        	if (((T)this.queue[i]).isPeekable()) {
+        		return new PollCandidate(i, (T)this.queue[i]);
+        	}
+        }
+        return null;
     }
     
-    @SuppressWarnings("unchecked")
-    public T poll() {
-        if (size == 0)
-            return null;
-        int s = --size;
-		T result = (T)queue[0];
-        T x = (T)queue[s];
-        queue[s] = null;
-        if (s != 0)
-        	siftDownUsingComparator(0, x);
-        return result;
-    }
-
     public boolean add(T e) {
         if (e == null)
             throw new NullPointerException();
@@ -123,5 +118,25 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
     public int size() 
     {
     	return this.size;
+    }
+    
+    public class PollCandidate
+    {
+    	int idx;
+    	T object;
+    	
+		public int getIdx() {
+			return idx;
+		}
+		
+		public T getObject() {
+			return object;
+		}
+		
+		PollCandidate(int idx, T object) {
+			super();
+			this.idx = idx;
+			this.object = object;
+		}    	
     }
 }
