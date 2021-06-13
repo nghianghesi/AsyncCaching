@@ -1,18 +1,32 @@
 package asyncCache.client;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 import asyncMemManager.common.di.BinarySerializer;
 
 class BinarySerializerBase {
 	
+	private static Map<Object, BinarySerializerBase> instances = new ConcurrentHashMap<Object, BinarySerializerBase>();
+	
 	private Function<Object, byte[]> serialzeFunc;
 	private Function<byte[], Object> deserializeFunc;
 	private Function<Object, Long> estimateObjectSizeFunc;
 	
+	// it's ok to in-thread safe here, as object override wouldn't cause any issue.
+	public static <T> BinarySerializerBase getBinarySerializerBaseInstance(BinarySerializer<T> serializer)
+	{
+		BinarySerializerBase inst = BinarySerializerBase.instances.getOrDefault(serializer.getClass(), null);
+		if(inst == null)
+		{
+			BinarySerializerBase.instances.put(serializer, inst = new BinarySerializerBase(serializer));
+		}
+		return inst;
+	}
 	
 	@SuppressWarnings("unchecked")
-	public <T> BinarySerializerBase(BinarySerializer<T> serializer)
+	private <T> BinarySerializerBase(BinarySerializer<T> serializer)
 	{
 		this.serialzeFunc = (obj) -> {
 			return serialize((T)obj);

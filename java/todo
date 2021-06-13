@@ -1,4 +1,4 @@
-- async flow
+- async flow/no need key to object mapping?
 - server side.
 - memcache client persistence
 - re-cleanup flow
