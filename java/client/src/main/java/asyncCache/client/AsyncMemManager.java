@@ -12,12 +12,10 @@ import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
-
-import asyncCache.client.AsyncMemManager.ManagedObjectBase.KeyLock;
-import asyncCache.client.AsyncMemManager.ManagedObjectBase.ManageKeyLock;
-import asyncCache.client.AsyncMemManager.ManagedObjectBase.ReadKeyLock;
 import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
+import asyncMemManager.common.ReadWriteLock;
+import asyncMemManager.common.ReadWriteLock.ReadWriteLockableObject;
 import asyncMemManager.common.di.BinarySerializer;
 import asyncMemManager.common.di.IndexableQueuedObject;
 
@@ -273,7 +271,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 									coldestObj.setManagementState(null);	
 									this.candlesPool.offer(coldestCandle);
 									
-									final KeyLock lock = coldestObj.lockManage();
+									final ReadWriteLock<ManagedObjectBase> lock = coldestObj.lockManage();
 									if (coldestObj.asyncCounter.get()>0)
 									{
 										this.persistence.store(coldestObj.key, coldestObj.serializer.serialize(coldestObj.object))
@@ -310,7 +308,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		this.waitingForPersistence = false;
 	}
 	
-	abstract class ManagedObjectBase implements IndexableQueuedObject
+	abstract class ManagedObjectBase implements IndexableQueuedObject, ReadWriteLockableObject
 	{
 		/***
 		 * key value to lookup object, this is auto unique generated00
@@ -438,112 +436,29 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		/**
 		 * read locking, used for async flows access object, to ensure data not interfered
 		 */
-		ReadKeyLock lockRead()
+		ReadWriteLock<ManagedObjectBase> lockRead()
 		{
-			while (true)
-			{
-				synchronized (this.key) {
-					if (this.accessCounter <= 0)
-					{
-						return new ReadKeyLock();
-					}
-				}
-				Thread.yield();
-			}				
-		}
-		
+			return new ReadWriteLock.ReadLock<ManagedObjectBase>(this);
+		}		
 		
 		/**
 		 * manage locking, used for cleanup, remove process, to ensure data not interfered 
 		 */
-		ManageKeyLock lockManage()
+		ReadWriteLock<ManagedObjectBase> lockManage()
 		{
-			while (true)
-			{
-				synchronized (this.key) {
-					if (this.accessCounter == 0)
-					{
-						return new ManageKeyLock();
-					}
-				}
-				Thread.yield();
-			}
+			return new ReadWriteLock.WriteLock<ManagedObjectBase>(this);
 		}
 		
-		/**
-		 * key lock for read/manage.
-		 */
-		abstract class KeyLock implements AutoCloseable{
-			protected boolean unlocked = false;
-			abstract int lockFactor();
-			protected KeyLock updownLock = null;
-			
-			KeyLock()
-			{
-				ManagedObjectBase.this.accessCounter += this.lockFactor();
-			}
-
-			void unlock() {
-				if(updownLock != null)
-				{
-					this.updownLock.unlock();
-				}else {
-					synchronized (ManagedObjectBase.this.key) {
-						if (!this.unlocked)
-						{
-							this.unlocked = true;
-							ManagedObjectBase.this.accessCounter -= this.lockFactor();
-						}
-					}
-				}
-			}	
-			
-			@Override
-			public void close() throws Exception {
-				if (this.updownLock!=null)
-				{
-					this.updownLock.close();
-				}else if ( !this.unlocked)
-				{
-					this.unlock();
-				}				
-			}
-		}			
-		
-		/**
-		 * Read key lock {@link ManagedObjectBase#lockRead()}
-		 */
-		class ReadKeyLock extends KeyLock
-		{
-			@Override
-			int lockFactor() {
-				return 1;
-			}
-			
-			ManageKeyLock upgradeToManageLock() {
-				this.unlock();
-				ManageKeyLock res = ManagedObjectBase.this.lockManage();
-				this.updownLock = res;
-				return res;
-			}
+		public int getLockFactor() {
+			return this.accessCounter;
 		}
 		
-		/**
-		 * Manage key lock {@link ManagedObjectBase#lockManage()}
-		 */
-		class ManageKeyLock extends KeyLock
-		{
-			@Override
-			int lockFactor() {
-				return -1;
-			}
-			
-			public ReadKeyLock downgradeReadKeyLock () {
-				this.unlock();
-				ReadKeyLock res = ManagedObjectBase.this.lockRead();
-				this.updownLock = res;
-				return res;
-			}
+		public void addLockFactor(int lockfactor) {
+			this.accessCounter += lockfactor;
+		}
+		
+		public Object getKeyLocker() {
+			return this.key;
 		}
 	}
 	
@@ -582,20 +497,20 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		 */
 		@SuppressWarnings("unchecked")
 		public <R> CompletableFuture<R> async(Function<T,R> f){
-			final ReadKeyLock lock = this.managedObject.lockRead();
+			final ReadWriteLock<ManagedObjectBase> lock = this.managedObject.lockRead();
 			CompletableFuture<T> res;
 			if (this.managedObject.object != null)
 			{
 				res = CompletableFuture
 						.completedFuture((T)this.managedObject.object);				
 			}else {
-				ManageKeyLock manageLock = lock.upgradeToManageLock();
+				ReadWriteLock<ManagedObjectBase> manageLock = lock.upgrade();
 				if (this.managedObject.object == null) 
 				{
 					this.managedObject.object = this.managedObject.serializer.deserialize(AsyncMemManager.this.persistence.retrieve(this.managedObject.key));					
 					
 				} 
-				manageLock.downgradeReadKeyLock();
+				manageLock.downgrade();
 				res = CompletableFuture
 						.completedFuture((T)this.managedObject.object);
 			}
@@ -607,15 +522,15 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		 */
 		@SuppressWarnings("unchecked")
 		public <R> R apply(Function<T,R> f) throws Exception {
-			try(ReadKeyLock lock = this.managedObject.lockRead()){
+			try(ReadWriteLock<ManagedObjectBase> lock = this.managedObject.lockRead()){
 				if (this.managedObject.object == null)
 				{
-					ManageKeyLock manageLock = lock.upgradeToManageLock();
+					ReadWriteLock<ManagedObjectBase> manageLock = lock.upgrade();
 					if (this.managedObject.object == null) 
 					{
 						this.managedObject.object = this.managedObject.serializer.deserialize(AsyncMemManager.this.persistence.retrieve(this.managedObject.key));
 					}
-					manageLock.downgradeReadKeyLock();
+					manageLock.downgrade();
 				}
 				
 				R res = f.apply((T)this.managedObject.object);

@@ -10,6 +10,11 @@
   <description>async mem manager server</description>
   <dependencies>
     <dependency>
+      <groupId>asyncMemManager</groupId>
+      <artifactId>asyncMemManager.common</artifactId>
+      <version>${asyncMemManager.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webflux</artifactId>
     </dependency>

@@ -12,9 +12,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
-
 import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
+import asyncMemManager.common.ReadWriteLock;
+import asyncMemManager.common.ReadWriteLock.ReadWriteLockableObject;
 import asyncMemManager.common.di.IndexableQueuedObject;
 
 public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
@@ -58,15 +59,19 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	
 	public void cache(String flowKey, UUID key, byte[] data) 
 	{
-		CacheData managedObj = new CacheData();
-		managedObj.key = key;
-		managedObj.data = data;
+		CacheData cachedObj = new CacheData();
+		cachedObj.key = key;
+		cachedObj.data = data;
 
-		managedObj.startTime = LocalTime.now();		
+		cachedObj.startTime = LocalTime.now();		
 		long waitDuration = this.hotTimeCalculator.calculate(this.config, flowKey);
-		managedObj.hotTime = managedObj.startTime.plus(waitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());
+		cachedObj.hotTime = cachedObj.startTime.plus(waitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());
 		
-		this.keyToObjectMap.put(managedObj.key, managedObj);		
+		CacheData newData = this.keyToObjectMap.putIfAbsent(cachedObj.key, cachedObj);
+		if (newData != cachedObj) // already added by other thread
+		{
+			return;
+		}
 		
 		// put node to candle
 		ManagedObjectQueue<CacheData> candle = null;
@@ -76,15 +81,15 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 			return;
 		}
 
-		synchronized (managedObj.key) {
-			if (managedObj.startTime != null)
-			{
-				candle.add(managedObj);
-				managedObj.containerCandle = candle;
-			}
+		ReadWriteLock<CacheData> lock = cachedObj.lockManage();
+		if (cachedObj.containerCandle == null)
+		{
+			candle.add(cachedObj);
+			cachedObj.containerCandle = candle;
 		}
+		lock.unlock();
 		
-		this.usedSize.addAndGet(managedObj.data.length);		
+		this.usedSize.addAndGet(cachedObj.data.length);		
 		this.candlesPool.offer(candle);
 		
 		if (!this.waitingForPersistence && this.isOverCapability())
@@ -95,13 +100,19 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	
 	public byte[] retrieve(UUID key) 
 	{
-		CacheData managedObj = this.keyToObjectMap.remove(key);
-		if (managedObj != null)
+		CacheData cachedObj = this.keyToObjectMap.remove(key);
+		if (cachedObj != null)
 		{
-			synchronized (managedObj.key) {
-				managedObj.startTime = null;		
+			ReadWriteLock<CacheData>lock = cachedObj.lockRead();
+			if (cachedObj.data == null)
+			{
+				ReadWriteLock<CacheData> manageLock = lock.upgrade();
+				cachedObj.data = this.persistence.retrieve(cachedObj.key);
+				manageLock.downgrade();
 			}
-			return managedObj.data;
+			byte[] res = cachedObj.data;
+			lock.unlock();
+			return res;
 		}
 		return null;
 	}
@@ -189,7 +200,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		this.waitingForPersistence = false;
 	}
 	
-	class CacheData implements IndexableQueuedObject
+	class CacheData implements IndexableQueuedObject, ReadWriteLockableObject
 	{
 		/***
 		 * key value from client
@@ -233,5 +244,38 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 			// TODO Auto-generated method stub
 			return true;
 		}
+		
+		/**
+		 * used for read/write locking this cache object. 
+		 */
+		private int accessCounter = 0;
+		
+		/**
+		 * read locking, retrieve flows
+		 */
+		ReadWriteLock<CacheData> lockRead()
+		{
+			return new ReadWriteLock.ReadLock<CacheData>(this);
+		}		
+		
+		/**
+		 * manage locking, used for cleanup, add 
+		 */
+		ReadWriteLock<CacheData> lockManage()
+		{
+			return new ReadWriteLock.WriteLock<CacheData>(this);
+		}
+		
+		public int getLockFactor() {
+			return this.accessCounter;
+		}
+		
+		public void addLockFactor(int lockfactor) {
+			this.accessCounter += lockfactor;
+		}
+		
+		public Object getKeyLocker() {
+			return this.key;
+		}		
 	}
 }
