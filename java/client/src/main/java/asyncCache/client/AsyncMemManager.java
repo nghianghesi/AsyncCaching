@@ -4,6 +4,7 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoField;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -11,7 +12,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
+
 import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
 import asyncMemManager.common.ReadWriteLock;
@@ -114,97 +118,90 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	}
 	
 	private void startTracking(ManagedObjectBase managedObj) {
-		if (managedObj.getManagementState() == ManagementState.None)
-		{
-			synchronized (managedObj) {	// to ensure only one manage action queued for this managedObj
-				if (managedObj.getManagementState() == ManagementState.None)
-				{			
-					managedObj.setManagementState(AsyncMemManager.queuedForManageCandle);
-					this.manageExecutor.execute(()->{
-						
-						// put node to candle
-						ManagedObjectQueue<ManagedObjectBase> candle = null;
-						try {
-							candle = this.candlesPool.take();
-						} catch (InterruptedException e) {
-							return;
-						}
-				
-						candle.add(managedObj);
-						managedObj.setManagementState(candle);
-						
-						this.usedSize.addAndGet(managedObj.estimatedSize);
-						
-						this.candlesPool.offer(candle);
-						
-						this.queueCleanUp();
-					});
-				}
+		this.queueManageAction(managedObj, ManagementState.None, (ManagedObjectQueue<ManagedObjectBase> noused) -> {						
+			// put node to candle
+			ManagedObjectQueue<ManagedObjectBase> candle = null;
+			try {
+				candle = this.candlesPool.take();
+			} catch (InterruptedException e) {
+				return;
 			}
-		}
+	
+			candle.add(managedObj);
+			managedObj.setManagementState(candle);
+			
+			this.usedSize.addAndGet(managedObj.estimatedSize);
+			
+			this.candlesPool.offer(candle);
+			
+			this.queueCleanUp();
+		});
 	}
 	
 	private void resumeTracking(ManagedObjectBase managedObj) {
-		if (managedObj.getManagementState() == ManagementState.None)
-		{
-			synchronized (managedObj) {	// to ensure only one manage action queued for this managedObj
-				if (managedObj.getManagementState() == ManagementState.None)
-				{				
-					managedObj.setManagementState(AsyncMemManager.queuedForManageCandle);
-					this.manageExecutor.execute(()->{ 
-						if (managedObj.getManagementState() == ManagementState.Queued)
-						{
-							// put node to candle
-							ManagedObjectQueue<ManagedObjectBase> candle = null;
-							try {
-								candle = this.candlesPool.take();
-							} catch (InterruptedException e) {
-								return;
-							}
-					
-							if (managedObj.asyncCounter.get() > 0)  // check again toensure nothing changed.
-							{
-								candle.add(managedObj);
-								managedObj.setManagementState(candle);
-								
-								this.usedSize.addAndGet(managedObj.estimatedSize);
-							}
-							
-							this.candlesPool.offer(candle);
-							this.queueCleanUp();
-						}
-					});
+		this.queueManageAction(managedObj, ManagementState.None, (ManagedObjectQueue<ManagedObjectBase> noused) -> {
+			if (managedObj.getManagementState() == ManagementState.Queued)
+			{
+				// put node to candle
+				ManagedObjectQueue<ManagedObjectBase> candle = null;
+				try {
+					candle = this.candlesPool.take();
+				} catch (InterruptedException e) {
+					return;
 				}
+		
+				if (managedObj.asyncCounter.get() > 0)  // check again toensure nothing changed.
+				{
+					candle.add(managedObj);
+					managedObj.setManagementState(candle);
+					
+					this.usedSize.addAndGet(managedObj.estimatedSize);
+				}
+				
+				this.candlesPool.offer(candle);
+				this.queueCleanUp();
 			}
-		}
+		});
 	}
 	
 	private void removeFromManagement(ManagedObjectBase managedObj) {
-		if (managedObj.getManagementState() == ManagementState.Managed) { 
-			synchronized (managedObj) { // to ensure only one manage action queued for this managedObj
-				if (managedObj.getManagementState() == ManagementState.Managed) { 
-					final ManagedObjectQueue<ManagedObjectBase> containerCandle = managedObj.setManagementState(AsyncMemManager.queuedForManageCandle);
-					
-					this.manageExecutor.execute(()->{
-						while(!this.candlesPool.remove(containerCandle))
-						{
-							Thread.yield();
-						}
-						
-						containerCandle.removeAt(managedObj.candleIndex);
-						managedObj.setManagementState(null);
-						this.usedSize.addAndGet(-managedObj.estimatedSize);
-		
-						if (this.cachedKeys.remove(managedObj.key)) 
-						{		
-							this.persistence.remove(managedObj.key);
-						}
+		this.queueManageAction(managedObj, ManagementState.Managing, (final ManagedObjectQueue<ManagedObjectBase> containerCandle) -> {
+			while(!this.candlesPool.remove(containerCandle))
+			{
+				Thread.yield();
+			}
+			
+			containerCandle.removeAt(managedObj.candleIndex);
+			managedObj.setManagementState(null);
+			this.usedSize.addAndGet(-managedObj.estimatedSize);
 
-						this.candlesPool.offer(containerCandle);
-					});
+			if (this.cachedKeys.remove(managedObj.key)) 
+			{		
+				this.persistence.remove(managedObj.key);
+			}
+
+			this.candlesPool.offer(containerCandle);
+		});
+	}
+	
+	/**
+	 * queue manage action for managedObj
+	 * @return current containerCandle of managedObj
+	 */
+	private boolean queueManageAction(ManagedObjectBase managedObj, ManagementState expectedCurrentState, Consumer<ManagedObjectQueue<ManagedObjectBase>> action)	
+	{
+		if (managedObj.getManagementState() == expectedCurrentState) { 
+			synchronized (managedObj.startTime) { // to ensure only one manage action queued for this managedObj
+				if (managedObj.getManagementState() == expectedCurrentState) 
+				{ 
+					ManagedObjectQueue<ManagedObjectBase> containerCandle = managedObj.setManagementState(AsyncMemManager.queuedForManageCandle);					
+					this.manageExecutor.execute(() -> action.accept(containerCandle));
+					return true;
 				}
 			}
 		}
+		
+		return false;
 	}
 	
 	private boolean isOverCapability()
@@ -235,6 +232,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	{
 		while (this.isOverCapability())
 		{
+			// find the coldest candidate
 			ManagedObjectQueue<ManagedObjectBase>.PollCandidate coldestCandidate = null;
 			for (ManagedObjectQueue<ManagedObjectBase> candle : this.candles)
 			{
@@ -248,58 +246,53 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				}
 			}
 			
+			// candidate founded
 			if (coldestCandidate != null)
 			{			
 				final ManagedObjectQueue<ManagedObjectBase>.PollCandidate coldestCandidateFinal = coldestCandidate;
 				final ManagedObjectBase coldestObj = coldestCandidate.getObject();
 				
-				if (coldestObj.getManagementState() == ManagementState.Managed) {
-					synchronized (coldestObj) {
-						if (coldestObj.getManagementState() == ManagementState.Managed) // check again to ensure only 1 manage action queued for this object.
-						{
-							final ManagedObjectQueue<ManagedObjectBase> coldestCandle = coldestObj.setManagementState(AsyncMemManager.queuedForManageCandle);						
+				boolean queued = this.queueManageAction(coldestObj, ManagementState.Managing, 
+						(final ManagedObjectQueue<ManagedObjectBase> coldestCandle) -> {						
+							while(!this.candlesPool.remove(coldestCandle))
+							{
+								Thread.yield();
+							}
 							
-							this.manageExecutor.execute(()->{						
-								while(!this.candlesPool.remove(coldestCandle))
-								{
-									Thread.yield();
-								}
+							ManagedObjectBase removedObj = coldestCandle.removeAt(coldestCandidateFinal.getIdx());						
+							if (coldestObj == removedObj)  // check again to ensure nothing changed by other thread
+							{						
+								coldestObj.setManagementState(null);	
+								this.candlesPool.offer(coldestCandle);
 								
-								ManagedObjectBase removedObj = coldestCandle.removeAt(coldestCandidateFinal.getIdx());						
-								if (coldestObj == removedObj)  // check again to ensure nothing changed by other thread
-								{						
-									coldestObj.setManagementState(null);	
-									this.candlesPool.offer(coldestCandle);
-									
-									final ReadWriteLock<ManagedObjectBase> lock = coldestObj.lockManage();
-									if (coldestObj.asyncCounter.get()>0)
-									{
-										this.persistence.store(coldestObj.key, coldestObj.serializer.serialize(coldestObj.object))
-										.thenRunAsync(()->{					
-											// synchronized to ensure retrieve never return null
-											coldestObj.object = null;								
-											this.usedSize.addAndGet(-coldestObj.estimatedSize);
-											this.cachedKeys.add(coldestObj.key);
-		
-											lock.unlock();
-											this.waitingForPersistence = false;
-											this.cleanUp();
-										}, this.manageExecutor);
-										
-										return;
-									}else {
-										// unlock if not processing
+								final ReadWriteLock<ManagedObjectBase> lock = coldestObj.lockManage();
+								if (coldestObj.asyncCounter.get()>0)
+								{
+									this.persistence.store(coldestObj.key, coldestObj.serializer.serialize(coldestObj.object))
+									.thenRunAsync(()->{					
+										// synchronized to ensure retrieve never return null
+										coldestObj.object = null;
+										this.usedSize.addAndGet(-coldestObj.estimatedSize);
+										this.cachedKeys.add(coldestObj.key);
+	
 										lock.unlock();
-									}
+										this.waitingForPersistence = false;
+										this.cleanUp();
+									}, this.manageExecutor);
+									
+									return;
 								}else {
-									// add back if not processing
-									coldestCandle.add(removedObj);
+									// unlock if not processing
+									lock.unlock();
 								}
-							});
-							
-							return; // done with this clean up, other cleanup will be called inside manage executor.
-						}
-					}
+							}else {
+								// add back if not processing
+								coldestCandle.add(removedObj);
+							}						
+					});
+					
+				if (queued) {							
+					return; // done with this clean up, other cleanup will be called inside manage executor.
 				}
 			}
 			
@@ -311,7 +304,8 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	abstract class ManagedObjectBase implements IndexableQueuedObject, ReadWriteLockableObject
 	{
 		/***
-		 * key value to lookup object, this is auto unique generated00
+		 * key value to lookup object, this is auto unique generated
+		 * also used as key for synchronize access vs management
 		 */
 		final UUID key;
 		
@@ -322,6 +316,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		
 		/**
 		 * time object managed
+		 * also used as key for ensuring only one manage action queued for this object.
 		 */
 		final LocalTime startTime;
 		
@@ -382,7 +377,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 			}else if (this.containerCandle == AsyncMemManager.queuedForManageCandle){
 				return ManagementState.Queued;
 			}else {
-				return ManagementState.Managed;
+				return ManagementState.Managing;
 			}
 		}
 		
@@ -430,7 +425,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		
 		@Override
 		public boolean isPeekable() {
-			return this.accessCounter == 0 && this.getManagementState() == ManagementState.Managed;
+			return this.accessCounter == 0 && this.getManagementState() == ManagementState.Managing;
 		}
 		
 		/**
@@ -466,7 +461,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	{
 		None,
 		Queued,
-		Managed,
+		Managing,
 	}
 	
 	/**
