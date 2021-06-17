@@ -4,7 +4,6 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoField;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -14,7 +13,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
@@ -185,8 +183,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	}
 	
 	/**
-	 * queue manage action for managedObj
-	 * @return current containerCandle of managedObj
+	 * queue manage action for managedObj, ensure only one action queued per object.
 	 */
 	private boolean queueManageAction(ManagedObjectBase managedObj, ManagementState expectedCurrentState, Consumer<ManagedObjectQueue<ManagedObjectBase>> action)	
 	{
@@ -230,7 +227,8 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	 */
 	private void cleanUp()
 	{
-		while (this.isOverCapability())
+		boolean queuedLoopCleanup = false;
+		while (!queuedLoopCleanup && this.isOverCapability())
 		{
 			// find the coldest candidate
 			ManagedObjectQueue<ManagedObjectBase>.PollCandidate coldestCandidate = null;
@@ -252,8 +250,9 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				final ManagedObjectQueue<ManagedObjectBase>.PollCandidate coldestCandidateFinal = coldestCandidate;
 				final ManagedObjectBase coldestObj = coldestCandidate.getObject();
 				
-				boolean queued = this.queueManageAction(coldestObj, ManagementState.Managing, 
-						(final ManagedObjectQueue<ManagedObjectBase> coldestCandle) -> {						
+				queuedLoopCleanup = this.queueManageAction(coldestObj, ManagementState.Managing, 
+						(final ManagedObjectQueue<ManagedObjectBase> coldestCandle) -> {
+							boolean queuedPersistance =false;
 							while(!this.candlesPool.remove(coldestCandle))
 							{
 								Thread.yield();
@@ -263,10 +262,9 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 							if (coldestObj == removedObj)  // check again to ensure nothing changed by other thread
 							{						
 								coldestObj.setManagementState(null);	
-								this.candlesPool.offer(coldestCandle);
 								
 								final ReadWriteLock<ManagedObjectBase> lock = coldestObj.lockManage();
-								if (coldestObj.asyncCounter.get()>0)
+								if (coldestObj.asyncCounter.get() > 0)
 								{
 									this.persistence.store(coldestObj.key, coldestObj.serializer.serialize(coldestObj.object))
 									.thenRunAsync(()->{					
@@ -276,24 +274,27 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 										this.cachedKeys.add(coldestObj.key);
 	
 										lock.unlock();
-										this.waitingForPersistence = false;
 										this.cleanUp();
 									}, this.manageExecutor);
-									
-									return;
+									queuedPersistance = true;
 								}else {
 									// unlock if not processing
 									lock.unlock();
 								}
-							}else {
+							}		
+							
+							if(!queuedPersistance) {
 								// add back if not processing
 								coldestCandle.add(removedObj);
-							}						
+							}
+							
+							// add back to pool after used.
+							this.candlesPool.offer(coldestCandle);
+									
+							if (!queuedPersistance) {
+								this.cleanUp();
+							}
 					});
-					
-				if (queued) {							
-					return; // done with this clean up, other cleanup will be called inside manage executor.
-				}
 			}
 			
 			Thread.yield();
