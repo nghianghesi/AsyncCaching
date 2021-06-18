@@ -204,7 +204,8 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 								// coldestNode was removed from candles so, never duplicate persistence.
 								final CacheData persistedNode = coldestNode;
 								final int datasize = coldestNode.data.length;
-								this.persistence.store(coldestNode.key, coldestNode.data)
+								long expectedDuration = LocalTime.now().until(persistedNode.hotTime, ChronoField.MILLI_OF_SECOND.getBaseUnit());
+								this.persistence.store(coldestNode.key, coldestNode.data, expectedDuration)
 								.thenRunAsync(()->{					
 									// synchronized to ensure retrieve never return null							
 									synchronized (persistedNode.key) {
