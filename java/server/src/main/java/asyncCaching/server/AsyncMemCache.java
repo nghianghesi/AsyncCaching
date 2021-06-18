@@ -24,52 +24,51 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	static private ManagedObjectQueue<CacheData> queuedForManageCandle = new ManagedObjectQueue<CacheData>(0, null);
 
 	private Configuration config;
-	private asyncMemManager.common.di.HotTimeCalculator hotTimeCalculator;
 	private asyncMemManager.common.di.Persistence persistence;
 	private BlockingQueue<ManagedObjectQueue<CacheData>> candlesPool;
-	private List<ManagedObjectQueue<CacheData>> candles;
+	private List<ManagedObjectQueue<CacheData>> candlesSrc;
 	private ConcurrentHashMap<UUID, CacheData> keyToObjectMap;
 	private AtomicLong usedSize;
 	private Comparator<CacheData> cacheNodeComparator = (n1, n2) -> n2.hotTime.compareTo(n1.hotTime);
 
 	//single threads to avoid collision, also, give priority to other flows
-	private ExecutorService manageExecutor = Executors.newFixedThreadPool(1);
+	private ExecutorService manageExecutor;
 	
 	public AsyncMemCache(Configuration config,
 			asyncMemManager.common.di.HotTimeCalculator hotimeCalculator, 
 			asyncMemManager.common.di.Persistence persistence) 
 	{
 		this.config = config;
-		this.hotTimeCalculator = hotimeCalculator;
 		this.persistence = persistence;
 		
 
 		this.keyToObjectMap = new ConcurrentHashMap<>(this.config.getInitialSize());
 		this.candlesPool = new PriorityBlockingQueue<>(this.config.getCandlePoolSize(), 
 														(c1, c2) -> Integer.compare(c1.size(), c2.size()));
-		this.candles = new ArrayList<>(this.config.getCandlePoolSize());
+		this.candlesSrc = new ArrayList<>(this.config.getCandlePoolSize());
 		
 		int initcandleSize = this.config.getInitialSize() / this.config.getCandlePoolSize();
 		initcandleSize = initcandleSize > 0 ? initcandleSize : this.config.getInitialSize();
+		
+		int numberOfManagementThread = this.config.getCandlePoolSize();
+		numberOfManagementThread = numberOfManagementThread > 0 ? numberOfManagementThread : 1;
+		this.manageExecutor = Executors.newFixedThreadPool(numberOfManagementThread + 1);
 		
 		// init candle pool
 		for(int i = 0; i < config.getCandlePoolSize(); i++)
 		{
 			ManagedObjectQueue<CacheData> candle = new ManagedObjectQueue<>(initcandleSize, this.cacheNodeComparator); // thread-safe ensured by candlesPool
 			this.candlesPool.add(candle);
-			this.candles.add(candle);
+			this.candlesSrc.add(candle);
 		}
 	}
 	
-	public void cache(String flowKey, UUID key, byte[] data) 
+	public void cache(UUID key, byte[] data, long expectedDuration) 
 	{
 		CacheData cachedObj = new CacheData();
 		cachedObj.key = key;
-		cachedObj.data = data;
-
-		cachedObj.startTime = LocalTime.now();		
-		long waitDuration = this.hotTimeCalculator.calculate(this.config, flowKey);
-		cachedObj.hotTime = cachedObj.startTime.plus(waitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());
+		cachedObj.data = data;	
+		cachedObj.hotTime = LocalTime.now().plus(expectedDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());
 		
 		CacheData newData = this.keyToObjectMap.putIfAbsent(cachedObj.key, cachedObj);
 		if (newData != cachedObj) // already added by other thread
@@ -107,7 +106,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	private boolean queueManageAction(CacheData managedObj, ManagementState expectedCurrentState, Consumer<ManagedObjectQueue<CacheData>> action)	
 	{
 		if (managedObj.getManagementState() == expectedCurrentState) { 
-			synchronized (managedObj.startTime) { // to ensure only one manage action queued for this managedObj
+			synchronized (managedObj.hotTime) { // to ensure only one manage action queued for this managedObj
 				if (managedObj.getManagementState() == expectedCurrentState) 
 				{ 
 					ManagedObjectQueue<CacheData> containerCandle = managedObj.setManagementState(AsyncMemCache.queuedForManageCandle);					
@@ -129,11 +128,25 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 				byte[] res = cachedObj.data;
 				if (res == null)
 				{
-					// object already untracked, so no need cleanup here.
-					res = this.persistence.retrieve(cachedObj.key);
+					res = this.persistence.retrieve(cachedObj.key);					
 				}else {
-					
+					this.usedSize.addAndGet(-res.length);
 				}
+				
+				this.queueManageAction(cachedObj, ManagementState.Managing, (ManagedObjectQueue<CacheData> candle) ->
+				{
+					while(!this.candlesPool.remove(candle))
+					{
+						Thread.yield();
+					}
+					
+					if (cachedObj.candleIndex >= 0 && cachedObj.candleIndex < candle.size())
+					{
+						candle.removeAt(cachedObj.candleIndex);				
+					}
+					
+					this.candlesPool.add(candle);
+				});
 				
 				return res;
 			}
@@ -168,7 +181,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		while (!queuedManagement && this.isOverCapability())
 		{
 			ManagedObjectQueue<CacheData>.PollCandidate coldestCandidate = null;
-			for (ManagedObjectQueue<CacheData> candle : this.candles)
+			for (ManagedObjectQueue<CacheData> candle : this.candlesSrc)
 			{
 				ManagedObjectQueue<CacheData>.PollCandidate node = candle.getPollCandidate();
 				if (node != null)
@@ -254,11 +267,6 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		 * original object
 		 */
 		byte[] data;
-		
-		/**
-		 * time when object cached
-		 */
-		LocalTime startTime;
 		
 		/**
 		 * time object expected to be retrieved for async, this is average from previous by keyflow

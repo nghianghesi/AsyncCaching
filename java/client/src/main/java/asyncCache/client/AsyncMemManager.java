@@ -55,12 +55,13 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 														(c1, c2) -> Integer.compare(c1.size(), c2.size()));
 		this.candlesSrc = new ArrayList<>(this.config.getCandlePoolSize());
 		
-		int numberOfManagementThread = this.config.getCandlePoolSize() / 2;
+		int numberOfManagementThread = this.config.getCandlePoolSize();
 		numberOfManagementThread = numberOfManagementThread > 0 ? numberOfManagementThread : 1;
 		this.manageExecutor = Executors.newFixedThreadPool(numberOfManagementThread + 1);
 		
 		int initcandleSize = this.config.getInitialSize() / this.config.getCandlePoolSize();
 		initcandleSize = initcandleSize > 0 ? initcandleSize : this.config.getInitialSize();
+		
 		// init candle pool
 		for(int i = 0; i < config.getCandlePoolSize(); i++)
 		{

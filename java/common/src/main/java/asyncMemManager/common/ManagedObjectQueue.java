@@ -66,18 +66,25 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
 	public T removeAt(int i) {
         // assert i >= 0 && i < size;
         int s = --size;
-        if (s == i) // removed last element
+        if (s == i) 
+        {// removed last element
+        	((T)queue[i]).setIndexInQueue(-1);
             queue[i] = null;
+        }
         else {
         	T moved = (T)queue[s];
             queue[s] = null;
             siftDownUsingComparator(i, moved);
             if (queue[i] == moved) {
             	siftUpUsingComparator(i, moved);
-                if (queue[i] != moved)
+                if (queue[i] != moved) 
+                {
+                	 moved.setIndexInQueue(-1);
                     return moved;
+                }
             }
         }
+        
         return null;
     }
     
