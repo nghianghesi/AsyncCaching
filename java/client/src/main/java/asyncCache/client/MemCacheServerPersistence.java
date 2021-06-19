@@ -8,13 +8,13 @@ import asyncMemManager.common.di.Persistence;
 public class MemCacheServerPersistence implements Persistence{
 
 	@Override
-	public CompletableFuture<UUID> store(UUID key, byte[] data, long expectedDuration) {
+	public CompletableFuture<UUID> store(UUID key, String data, long expectedDuration) {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
-	public byte[] retrieve(UUID key) {
+	public String retrieve(UUID key) {
 		// TODO Auto-generated method stub
 		return null;
 	}

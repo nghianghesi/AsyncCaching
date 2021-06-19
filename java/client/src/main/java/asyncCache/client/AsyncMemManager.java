@@ -17,7 +17,7 @@ import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
 import asyncMemManager.common.ReadWriteLock;
 import asyncMemManager.common.ReadWriteLock.ReadWriteLockableObject;
-import asyncMemManager.common.di.BinarySerializer;
+import asyncMemManager.common.di.Serializer;
 import asyncMemManager.common.di.IndexableQueuedObject;
 
 public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, AutoCloseable {
@@ -79,7 +79,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	 * @return key for retrieve object from cache.
 	 */
 	@Override
-	public <T> SetupObject<T> manage(String flowKey, T object, BinarySerializer<T> serializer) 
+	public <T> SetupObject<T> manage(String flowKey, T object, Serializer<T> serializer) 
 	{
 		// init key, mapKey, newnode
 		if (object == null)

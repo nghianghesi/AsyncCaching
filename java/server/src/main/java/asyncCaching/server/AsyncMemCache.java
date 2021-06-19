@@ -7,22 +7,18 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 
 import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
 import asyncMemManager.common.di.IndexableQueuedObject;
 
-public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {	
-	
-	// this is for special marker only.
-	static private ManagedObjectQueue<CacheData> queuedForManageCandle = new ManagedObjectQueue<CacheData>(0, null);
-
+public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	private Configuration config;
 	private asyncMemManager.common.di.Persistence persistence;
 	private BlockingQueue<ManagedObjectQueue<CacheData>> candlesPool;
@@ -63,7 +59,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		}
 	}
 	
-	public void cache(UUID key, byte[] data, long expectedDuration) 
+	public void cache(UUID key, String data, long expectedDuration) 
 	{
 		CacheData cachedObj = new CacheData();
 		cachedObj.key = key;
@@ -76,7 +72,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 			return;
 		}
 		
-		this.queueManageAction(newData, ManagementState.None, (ManagedObjectQueue<CacheData> nullUnused) ->
+		this.queueManageAction(newData, () ->
 		{
 			// get a candle for container.
 			ManagedObjectQueue<CacheData> candle = null;
@@ -92,7 +88,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 				cachedObj.containerCandle = candle;
 			}
 			
-			this.usedSize.addAndGet(cachedObj.data.length);		
+			this.usedSize.addAndGet(cachedObj.data.length());		
 			this.candlesPool.offer(candle);
 			
 			this.queueCleanUp();
@@ -103,50 +99,47 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	 * queue manage action for managedObj
 	 * @return current containerCandle of managedObj
 	 */
-	private boolean queueManageAction(CacheData managedObj, ManagementState expectedCurrentState, Consumer<ManagedObjectQueue<CacheData>> action)	
+	private void queueManageAction(CacheData managedObj, Runnable action)	
 	{
-		if (managedObj.getManagementState() == expectedCurrentState) { 
-			synchronized (managedObj.hotTime) { // to ensure only one manage action queued for this managedObj
-				if (managedObj.getManagementState() == expectedCurrentState) 
-				{ 
-					ManagedObjectQueue<CacheData> containerCandle = managedObj.setManagementState(AsyncMemCache.queuedForManageCandle);					
-					this.manageExecutor.execute(() -> action.accept(containerCandle));
-					return true;
-				}
-			}
+		synchronized (managedObj.hotTime) { // to ensure only one manage action queued for this managedObj
+			managedObj.manageAction = managedObj.manageAction.thenRunAsync(action);
 		}
-		
-		return false;
 	}	
 	
-	public byte[] retrieve(UUID key) 
+	public String retrieve(UUID key) 
 	{
 		CacheData cachedObj = this.keyToObjectMap.remove(key);
 		if (cachedObj != null)
 		{
 			synchronized (cachedObj.key) {
-				byte[] res = cachedObj.data;
+				String res = cachedObj.data;
 				if (res == null)
 				{
 					res = this.persistence.retrieve(cachedObj.key);					
 				}else {
-					this.usedSize.addAndGet(-res.length);
+					this.usedSize.addAndGet(-res.length());
+
+					// remove from cache
+					this.queueManageAction(cachedObj, () ->
+					{
+						if (cachedObj.data != null)
+						{
+							while(!this.candlesPool.remove(cachedObj.containerCandle))
+							{
+								Thread.yield();
+							}
+							
+							if (cachedObj.candleIndex >= 0 && cachedObj.candleIndex < cachedObj.containerCandle.size())
+							{
+								cachedObj.containerCandle.removeAt(cachedObj.candleIndex);				
+							}
+							
+							this.candlesPool.add(cachedObj.containerCandle);
+							
+							cachedObj.data = null;
+						}
+					});
 				}
-				
-				this.queueManageAction(cachedObj, ManagementState.Managing, (ManagedObjectQueue<CacheData> candle) ->
-				{
-					while(!this.candlesPool.remove(candle))
-					{
-						Thread.yield();
-					}
-					
-					if (cachedObj.candleIndex >= 0 && cachedObj.candleIndex < candle.size())
-					{
-						candle.removeAt(cachedObj.candleIndex);				
-					}
-					
-					this.candlesPool.add(candle);
-				});
 				
 				return res;
 			}
@@ -197,11 +190,14 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 			{		
 				final ManagedObjectQueue<CacheData>.PollCandidate coldestCandidateFinal = coldestCandidate;
 				final CacheData coldestNode = coldestCandidate.getObject();
+				final ManagedObjectQueue<CacheData> coldestCandle = coldestNode.containerCandle; 
 				
-				queuedManagement = this.queueManageAction(coldestNode, ManagementState.Managing, (coldestCandle) -> {
-					boolean queuedPersistance = false;
+				this.queueManageAction(coldestNode, () -> {
 					if (coldestCandle != null)
-					{
+					{					
+						
+						boolean queuedPersistance = false;
+
 						while(!this.candlesPool.remove(coldestCandle))
 						{
 							Thread.yield();
@@ -216,7 +212,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 							
 								// coldestNode was removed from candles so, never duplicate persistence.
 								final CacheData persistedNode = coldestNode;
-								final int datasize = coldestNode.data.length;
+								final int datasize = coldestNode.data.length();
 								long expectedDuration = LocalTime.now().until(persistedNode.hotTime, ChronoField.MILLI_OF_SECOND.getBaseUnit());
 								this.persistence.store(coldestNode.key, coldestNode.data, expectedDuration)
 								.thenRunAsync(()->{					
@@ -230,22 +226,19 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 									this.cleanUp();
 								}, this.manageExecutor);
 								queuedPersistance = true;
-							}else {
-								// add node back if not processed
-								coldestCandle.add(coldestNode);							
-							}	
+							}
 							
 							if(!queuedPersistance) {
 								// add back if not processing
 								coldestCandle.add(removedNode);
-							}						
+							}
 						}
 						
 						// add back to pool after used.
 						this.candlesPool.offer(coldestCandle);
-								
-						if (!queuedPersistance) {
-							this.cleanUp();
+						
+						if (queuedPersistance) {
+							return;
 						}
 					}
 				});
@@ -266,7 +259,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		/**
 		 * original object
 		 */
-		byte[] data;
+		String data;
 		
 		/**
 		 * time object expected to be retrieved for async, this is average from previous by keyflow
@@ -295,37 +288,6 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 			return true;
 		}
 		
-		/**
-		 * get management state to have associated action.
-		 * this is for roughly estimate, as not ensured thread-safe.
-		 */
-		ManagementState getManagementState()
-		{
-			if (this.containerCandle == null)
-			{
-				return ManagementState.None;
-			}else if (this.containerCandle == AsyncMemCache.queuedForManageCandle){
-				return ManagementState.Queued;
-			}else {
-				return ManagementState.Managing;
-			}
-		}
-		
-		/**
-		 * return previous containerCandel
-		 */
-		ManagedObjectQueue<CacheData> setManagementState(ManagedObjectQueue<CacheData> containerCandle)
-		{
-			ManagedObjectQueue<CacheData> prev = this.containerCandle;
-			this.containerCandle = containerCandle;
-			return prev;
-		}	
-	}
-	
-	static enum ManagementState
-	{
-		None,
-		Queued,
-		Managing,
+		CompletableFuture<Void> manageAction = CompletableFuture.completedFuture(null);
 	}
 }

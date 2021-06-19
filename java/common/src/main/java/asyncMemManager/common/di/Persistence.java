@@ -10,14 +10,14 @@ public interface Persistence {
 	 * @param data
 	 * @return
 	 */
-	public CompletableFuture<UUID> store(UUID key, byte[] data, long expectedDuration);
+	public CompletableFuture<UUID> store(UUID key, String data, long expectedDuration);
 	
 	/**
 	 * retrieve and remove data from storage
 	 * @param key
 	 * @return
 	 */
-	public byte[] retrieve(UUID key);
+	public String retrieve(UUID key);
 	
 	/**
 	 * remove data from storage.

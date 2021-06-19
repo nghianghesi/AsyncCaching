@@ -4,18 +4,18 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
-import asyncMemManager.common.di.BinarySerializer;
+import asyncMemManager.common.di.Serializer;
 
 class BinarySerializerBase {
 	
 	private static Map<Object, BinarySerializerBase> instances = new ConcurrentHashMap<Object, BinarySerializerBase>();
 	
-	private Function<Object, byte[]> serialzeFunc;
-	private Function<byte[], Object> deserializeFunc;
+	private Function<Object, String> serialzeFunc;
+	private Function<String, Object> deserializeFunc;
 	private Function<Object, Long> estimateObjectSizeFunc;
 	
 	// it's ok to in-thread safe here, as object override wouldn't cause any issue.
-	public static <T> BinarySerializerBase getBinarySerializerBaseInstance(BinarySerializer<T> serializer)
+	public static <T> BinarySerializerBase getBinarySerializerBaseInstance(Serializer<T> serializer)
 	{
 		BinarySerializerBase inst = BinarySerializerBase.instances.getOrDefault(serializer.getClass(), null);
 		if(inst == null)
@@ -26,7 +26,7 @@ class BinarySerializerBase {
 	}
 	
 	@SuppressWarnings("unchecked")
-	private <T> BinarySerializerBase(BinarySerializer<T> serializer)
+	private <T> BinarySerializerBase(Serializer<T> serializer)
 	{
 		this.serialzeFunc = (obj) -> {
 			return serialize((T)obj);
@@ -41,13 +41,13 @@ class BinarySerializerBase {
 		};
 	}
 	
-	public byte[] serialize(Object object)
+	public String serialize(Object object)
 	{
 		return this.serialzeFunc.apply(object);
 	}
 	
 	@SuppressWarnings("unchecked")
-	public <T> T deserialize(byte[] data)
+	public <T> T deserialize(String data)
 	{
 		return (T)this.deserializeFunc.apply(data);
 	}
