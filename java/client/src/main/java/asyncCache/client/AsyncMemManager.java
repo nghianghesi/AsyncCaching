@@ -17,7 +17,7 @@ import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
 import asyncMemManager.common.ReadWriteLock;
 import asyncMemManager.common.ReadWriteLock.ReadWriteLockableObject;
-import asyncMemManager.common.di.Serializer;
+import asyncMemManager.common.di.AsyncMemSerializer;
 import asyncMemManager.common.di.IndexableQueuedObject;
 
 public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, AutoCloseable {
@@ -79,7 +79,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	 * @return key for retrieve object from cache.
 	 */
 	@Override
-	public <T> SetupObject<T> manage(String flowKey, T object, Serializer<T> serializer) 
+	public <T> SetupObject<T> manage(String flowKey, T object, AsyncMemSerializer<T> serializer) 
 	{
 		// init key, mapKey, newnode
 		if (object == null)
@@ -87,7 +87,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 			return null;
 		}
 		
-		BinarySerializerBase baseSerializer = BinarySerializerBase.getBinarySerializerBaseInstance(serializer);
+		SerializerBase baseSerializer = SerializerBase.getBinarySerializerBaseInstance(serializer);
 		LocalTime startTime = LocalTime.now();
 		long estimatedSize = serializer.estimateObjectSize(object);
 		
@@ -328,12 +328,12 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		/**
 		 * the serializer to ser/des object for persistence.
 		 */
-		final BinarySerializerBase serializer;	
+		final SerializerBase serializer;	
 
 		/**
 		 * init  ManagedObject 
 		 */
-		public ManagedObjectBase(String flowKey, LocalTime startTime, long estimatedSize, BinarySerializerBase serializer) {
+		public ManagedObjectBase(String flowKey, LocalTime startTime, long estimatedSize, SerializerBase serializer) {
 			this.flowKey = flowKey;
 			this.key = UUID.randomUUID();
 			this.startTime = startTime;
@@ -438,7 +438,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	 */
 	class ManagedObject<T> extends ManagedObjectBase
 	{
-		ManagedObject(String flowKey, T obj, LocalTime startTime, long estimatedSize, BinarySerializerBase serializer)
+		ManagedObject(String flowKey, T obj, LocalTime startTime, long estimatedSize, SerializerBase serializer)
 		{
 			super(flowKey, startTime, estimatedSize, serializer);
 			this.object = obj;
