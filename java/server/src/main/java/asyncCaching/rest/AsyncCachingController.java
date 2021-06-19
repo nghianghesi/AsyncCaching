@@ -22,12 +22,12 @@ public class AsyncCachingController {
 	    this.asyncMemCache.cache(key, data, expectedDuration);
 	}
 	
-	@RequestMapping(method = RequestMethod.POST, value = "/cache/retrieve/{key}")
+	@RequestMapping(method = RequestMethod.GET, value = "/cache/retrieve/{key}")
 	public String retrieve(@PathVariable UUID key) throws Exception {
 	    return this.asyncMemCache.retrieve(key);
 	}	
 	
-	@RequestMapping(method = RequestMethod.POST, value = "/cache/remove/{key}")
+	@RequestMapping(method = RequestMethod.GET, value = "/cache/remove/{key}")
 	public void remove(@PathVariable UUID key) throws Exception {
 	    this.asyncMemCache.retrieve(key);
 	}

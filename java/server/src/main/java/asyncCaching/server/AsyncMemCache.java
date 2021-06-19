@@ -24,14 +24,13 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	private BlockingQueue<ManagedObjectQueue<CacheData>> candlesPool;
 	private List<ManagedObjectQueue<CacheData>> candlesSrc;
 	private ConcurrentHashMap<UUID, CacheData> keyToObjectMap;
-	private AtomicLong usedSize;
+	private AtomicLong usedSize = new AtomicLong(0);
 	private Comparator<CacheData> cacheNodeComparator = (n1, n2) -> n2.hotTime.compareTo(n1.hotTime);
 
 	//single threads to avoid collision, also, give priority to other flows
 	private ExecutorService manageExecutor;
 	
 	public AsyncMemCache(Configuration config,
-			asyncMemManager.common.di.HotTimeCalculator hotimeCalculator, 
 			asyncMemManager.common.di.Persistence persistence) 
 	{
 		this.config = config;
@@ -71,6 +70,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		{
 			return;
 		}
+		this.usedSize.addAndGet(data.length());
 		
 		this.queueManageAction(newData, () ->
 		{
@@ -109,6 +109,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	public String retrieve(UUID key) 
 	{
 		CacheData cachedObj = this.keyToObjectMap.remove(key);
+		
 		if (cachedObj != null)
 		{
 			synchronized (cachedObj.key) {
@@ -117,28 +118,31 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 				{
 					res = this.persistence.retrieve(cachedObj.key);					
 				}else {
+					// remove from cache
 					this.usedSize.addAndGet(-res.length());
 
-					// remove from cache
-					this.queueManageAction(cachedObj, () ->
+					if (cachedObj.containerCandle != null)
 					{
-						if (cachedObj.data != null)
+						this.queueManageAction(cachedObj, () ->
 						{
-							while(!this.candlesPool.remove(cachedObj.containerCandle))
+							if (cachedObj.containerCandle != null)
 							{
-								Thread.yield();
+								while(!this.candlesPool.remove(cachedObj.containerCandle))
+								{
+									Thread.yield();
+								}
+								
+								if (cachedObj.candleIndex >= 0 && cachedObj.candleIndex < cachedObj.containerCandle.size())
+								{
+									cachedObj.containerCandle.removeAt(cachedObj.candleIndex);				
+								}
+								
+								this.candlesPool.add(cachedObj.containerCandle);
+								
+								cachedObj.data = null;
 							}
-							
-							if (cachedObj.candleIndex >= 0 && cachedObj.candleIndex < cachedObj.containerCandle.size())
-							{
-								cachedObj.containerCandle.removeAt(cachedObj.candleIndex);				
-							}
-							
-							this.candlesPool.add(cachedObj.containerCandle);
-							
-							cachedObj.data = null;
-						}
-					});
+						});
+					}
 				}
 				
 				return res;
