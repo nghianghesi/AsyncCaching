@@ -7,12 +7,12 @@ import asyncMemManager.common.di.AsyncMemSerializer;
 public class TestEntity {
 	private String stringProperty;
 	private int[] largeProperty;
-	private static final int largePropertySize = 10000000;
+	public static final int LARGE_PROPERTY_SIZE = 40000;
 	
 	public static TestEntity initLargeObject() {
 		TestEntity e = new TestEntity();
 		e.stringProperty = String.format("this is test string %d", new Random().nextInt());
-		e.largeProperty = new int[largePropertySize];
+		e.largeProperty = new int[LARGE_PROPERTY_SIZE];
 		e.largeProperty[0] = new Random().nextInt();
 		return e;
 	}
@@ -30,11 +30,11 @@ public class TestEntity {
 		
 		@Override
 		public String serialize(TestEntity object) {
-			if (object.largeProperty != null)
+			if (object.largeProperty == null)
 			{
 				return object.stringProperty;
 			}else {
-				return "" + object.largeProperty + "##" + object.stringProperty;
+				return "" + object.largeProperty[0] + "##" + object.stringProperty;
 			}
 		}
 
@@ -42,9 +42,9 @@ public class TestEntity {
 		public TestEntity deserialize(String data) {
 			TestEntity e = new TestEntity();
 			int indexOfSplitter = data.indexOf("##");
-			if (indexOfSplitter>=0)
+			if (indexOfSplitter >= 0)
 			{
-				e.largeProperty=new int[largePropertySize];
+				e.largeProperty=new int[LARGE_PROPERTY_SIZE];
 				e.largeProperty[0] = Integer.parseInt(data.substring(0, indexOfSplitter));
 				e.stringProperty = data.substring(indexOfSplitter+2);
 			}else {
@@ -55,7 +55,7 @@ public class TestEntity {
 
 		@Override
 		public long estimateObjectSize(TestEntity object) {		
-			return largePropertySize + 20;
+			return LARGE_PROPERTY_SIZE + 20;
 		}
 	}
 }

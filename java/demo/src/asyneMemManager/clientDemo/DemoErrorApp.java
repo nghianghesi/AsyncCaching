@@ -11,13 +11,14 @@ import asyneMemManager.clientDemo.model.TestEntity;
 public class DemoErrorApp {	
 
 	public static void main(String[] args) {
-		ExecutorService executor = Executors.newFixedThreadPool(10);
+		ExecutorService executor = Executors.newFixedThreadPool(5);
 		
 		// TODO Auto-generated method stub
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();
-		int n = 100;
+		int n = 200;
 		for (int i=0; i<n; i++)
-		{			
+		{						
+			System.out.print("Queuing "+i);
 			final TestEntity e = TestEntity.initLargeObject();
 			final int idx = i;
 			tasks.add(

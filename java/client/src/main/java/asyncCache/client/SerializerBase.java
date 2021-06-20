@@ -20,8 +20,10 @@ class SerializerBase {
 		SerializerBase inst = SerializerBase.instances.getOrDefault(serializer.getClass(), null);
 		if(inst == null)
 		{
-			SerializerBase.instances.put(serializer, inst = new SerializerBase(serializer));
+			inst = new SerializerBase(serializer);
+			SerializerBase.instances.put(serializer, inst);
 		}
+		
 		return inst;
 	}
 	
@@ -29,7 +31,7 @@ class SerializerBase {
 	private <T> SerializerBase(AsyncMemSerializer<T> serializer)
 	{
 		this.serialzeFunc = (obj) -> {
-			return serialize((T)obj);
+			return serializer.serialize((T)obj);
 		};		
 		
 		this.deserializeFunc = (data) -> {

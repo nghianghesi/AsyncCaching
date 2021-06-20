@@ -177,13 +177,13 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		boolean queuedManagement = false;
 		while (!queuedManagement && this.isOverCapability())
 		{
-			ManagedObjectQueue<CacheData>.PollCandidate coldestCandidate = null;
+			CacheData coldestCandidate = null;
 			for (ManagedObjectQueue<CacheData> candle : this.candlesSrc)
 			{
-				ManagedObjectQueue<CacheData>.PollCandidate node = candle.getPollCandidate();
+				CacheData node = candle.getPollCandidate();
 				if (node != null)
 				{
-					if (coldestCandidate == null || cacheNodeComparator.compare(coldestCandidate.getObject(), node.getObject()) > 0)
+					if (coldestCandidate == null || cacheNodeComparator.compare(coldestCandidate, node) > 0)
 					{
 						coldestCandidate = node;
 					}
@@ -192,61 +192,50 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 			
 			if (coldestCandidate != null)
 			{		
-				final ManagedObjectQueue<CacheData>.PollCandidate coldestCandidateFinal = coldestCandidate;
-				final CacheData coldestNode = coldestCandidate.getObject();
+				final CacheData coldestNode = coldestCandidate;
 				final ManagedObjectQueue<CacheData> coldestCandle = coldestNode.containerCandle; 
 				
 				this.queueManageAction(coldestNode, () -> {
 					if (coldestCandle != null)
-					{					
-						
+					{	
 						boolean queuedPersistance = false;
-
 						while(!this.candlesPool.remove(coldestCandle))
 						{
 							Thread.yield();
 						}				
 						
-						if (coldestNode.containerCandle == coldestCandle)
+						if (coldestNode.candleIndex > 0)
 						{
-							CacheData removedNode = coldestCandle.removeAt(coldestCandidateFinal.getIdx());
-							if (removedNode == coldestNode)
-							{
-								coldestNode.containerCandle = null;	
-							
-								// coldestNode was removed from candles so, never duplicate persistence.
-								final CacheData persistedNode = coldestNode;
-								final int datasize = coldestNode.data.length();
-								long expectedDuration = LocalTime.now().until(persistedNode.hotTime, ChronoField.MILLI_OF_SECOND.getBaseUnit());
-								this.persistence.store(coldestNode.key, coldestNode.data, expectedDuration)
-								.thenRunAsync(()->{					
-									// synchronized to ensure retrieve never return null							
-									synchronized (persistedNode.key) {
-										persistedNode.data = null;
-									}
-									
-									this.usedSize.addAndGet(-datasize);
-	
-									this.cleanUp();
-								}, this.manageExecutor);
-								queuedPersistance = true;
-							}
-							
-							if(!queuedPersistance) {
-								// add back if not processing
-								coldestCandle.add(removedNode);
-							}
+							coldestCandle.removeAt(coldestNode.candleIndex);
+							coldestNode.containerCandle = null;	
+						
+							// coldestNode was removed from candles so, never duplicate persistence.
+							final int datasize = coldestNode.data.length();
+							long expectedDuration = LocalTime.now().until(coldestNode.hotTime, ChronoField.MILLI_OF_SECOND.getBaseUnit());
+							this.persistence.store(coldestNode.key, coldestNode.data, expectedDuration)
+							.thenRunAsync(()->{					
+								// synchronized to ensure retrieve never return null							
+								synchronized (coldestNode.key) {
+									coldestNode.data = null;
+								}
+								
+								this.usedSize.addAndGet(-datasize);
+
+								this.cleanUp();
+							}, this.manageExecutor);
+							queuedPersistance = true;
 						}
 						
 						// add back to pool after used.
 						this.candlesPool.offer(coldestCandle);
 						
-						if (queuedPersistance) {
-							return;
+						if (!queuedPersistance) {
+							this.cleanUp();
 						}
 					}
 				});
 			}
+			
 			Thread.yield();
 		}
 		

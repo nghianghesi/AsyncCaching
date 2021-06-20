@@ -14,7 +14,8 @@
 		<maven.compiler.source>1.8</maven.compiler.source>
     <java.version>1.8</java.version>		
     
-    <openjdk.jol.version>0.16</openjdk.jol.version>    
+    <openjdk.jol.version>0.16</openjdk.jol.version>
+    <retrofit.verion>2.9.0</retrofit.verion>    
 	</properties>
   <parent>
     <groupId>org.springframework.boot</groupId>

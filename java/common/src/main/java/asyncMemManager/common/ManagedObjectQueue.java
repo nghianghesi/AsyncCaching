@@ -37,12 +37,12 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
     }
     
     @SuppressWarnings("unchecked")
-	public PollCandidate getPollCandidate() {
+	public T getPollCandidate() {
     	// size expected much higher than MAX_POLL_CANDIDATE_CHECK_RANGE, so there should be thread-safe index out of range issue
         for (int i=0; i<MAX_POLL_CANDIDATE_CHECK_RANGE && i<this.size; i++)
         {
         	if (((T)this.queue[i]).isPeekable()) {
-        		return new PollCandidate(i, (T)this.queue[i]);
+        		return (T)this.queue[i];
         	}
         }
         return null;
@@ -125,25 +125,5 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
     public int size() 
     {
     	return this.size;
-    }
-    
-    public class PollCandidate
-    {
-    	int idx;
-    	T object;
-    	
-		public int getIdx() {
-			return idx;
-		}
-		
-		public T getObject() {
-			return object;
-		}
-		
-		PollCandidate(int idx, T object) {
-			super();
-			this.idx = idx;
-			this.object = object;
-		}    	
     }
 }
