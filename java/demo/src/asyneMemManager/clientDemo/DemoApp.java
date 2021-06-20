@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -24,7 +25,7 @@ public class DemoApp {
 		int capacity = 20 * TestEntity.LARGE_PROPERTY_SIZE;
 		int initialSize = 20;
 		int cleanupInterval = 3600;
-		int candelPoolSize = 4;
+		int candelPoolSize = 2;
 		Map<String, asyncMemManager.common.FlowKeyConfiguration> flowKeyConfig = new HashMap<>();
 		asyncMemManager.common.Configuration config = new asyncMemManager.common.Configuration(capacity, initialSize, cleanupInterval, candelPoolSize, flowKeyConfig);
 				
@@ -45,7 +46,7 @@ public class DemoApp {
 				CompletableFuture.runAsync(()->{
 					System.out.println("First Async "+ idx + e.supply((o)->o.getSomeText()));
 					try {
-						Thread.sleep(1000);
+						Thread.sleep(1000 + new Random().nextInt()%1000);
 					} catch (InterruptedException e1) {
 						// TODO Auto-generated catch block
 						e1.printStackTrace();
@@ -54,7 +55,7 @@ public class DemoApp {
 				.thenRunAsync(()->{
 					System.out.println("2nd Async "+ idx + e.supply((o)->o.getSomeText())); 
 					try {
-						Thread.sleep(1000);
+						Thread.sleep(1000 + new Random().nextInt()%1000);
 					} catch (InterruptedException e1) {
 						// TODO Auto-generated catch block
 						e1.printStackTrace();
@@ -63,7 +64,7 @@ public class DemoApp {
 				.thenRunAsync(()->{
 					System.out.println("3rd Async "+ idx + e.supply((o)->o.getSomeText()));
 					try {
-						Thread.sleep(1000);
+						Thread.sleep(1000 + new Random().nextInt()%1000);
 					} catch (InterruptedException e1) {
 						// TODO Auto-generated catch block
 						e1.printStackTrace();

@@ -3,15 +3,12 @@ package asyncCache.client;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import asyncMemManager.common.di.Persistence;
 import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 import retrofit2.http.Body;
@@ -40,22 +37,13 @@ public class MemCacheServerPersistence implements Persistence{
 	}
 	
 	@Override
-	public CompletableFuture<Void> store(UUID key, String data, long expectedDuration) {
-		CompletableFuture<Void> res = new CompletableFuture<Void>();
-		Call<Void> call = this.restClient.store(key, data, expectedDuration);
-		call.enqueue(new Callback<Void>() {
-			@Override
-		    public void onResponse(Call<Void> call, Response<Void> response) {
-		        res.complete(null);  
-		    }
-
-		    @Override
-		    public void onFailure(Call<Void> call, Throwable t) {
-		        // Log error here since request failed
-		    	res.completeExceptionally(t);
-		    }
-		});
-		return res;
+	public void store(UUID key, String data, long expectedDuration) {
+		try {
+			this.restClient.store(key, data, expectedDuration).execute().body();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 
 	@Override

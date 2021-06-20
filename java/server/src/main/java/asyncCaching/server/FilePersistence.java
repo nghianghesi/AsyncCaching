@@ -5,8 +5,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-
 import asyncMemManager.common.di.Persistence;
 
 public class FilePersistence implements Persistence {
@@ -17,7 +15,7 @@ public class FilePersistence implements Persistence {
 	}
 	
 	@Override
-	public CompletableFuture<Void> store(UUID key, String data, long expectedDuration) {
+	public void store(UUID key, String data, long expectedDuration) {
 	    Path path = Paths.get(this.baseFolder + key);
 	    byte[] strToBytes = data.getBytes();
 	    try {
@@ -26,7 +24,6 @@ public class FilePersistence implements Persistence {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-	    return CompletableFuture.completedFuture(null);
 	}
 
 	@Override

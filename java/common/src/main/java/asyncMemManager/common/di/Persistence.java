@@ -1,7 +1,6 @@
 package asyncMemManager.common.di;
 
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 public interface Persistence {
 	/**
@@ -10,7 +9,7 @@ public interface Persistence {
 	 * @param data
 	 * @return
 	 */
-	public CompletableFuture<Void> store(UUID key, String data, long expectedDuration);
+	public void store(UUID key, String data, long expectedDuration);
 	
 	/**
 	 * retrieve and remove data from storage

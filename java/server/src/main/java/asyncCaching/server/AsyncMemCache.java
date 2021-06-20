@@ -174,8 +174,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	
 	private void cleanUp()
 	{		
-		boolean queuedManagement = false;
-		while (!queuedManagement && this.isOverCapability())
+		while (this.isOverCapability())
 		{
 			CacheData coldestCandidate = null;
 			for (ManagedObjectQueue<CacheData> candle : this.candlesSrc)
@@ -198,7 +197,6 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 				this.queueManageAction(coldestNode, () -> {
 					if (coldestCandle != null)
 					{	
-						boolean queuedPersistance = false;
 						while(!this.candlesPool.remove(coldestCandle))
 						{
 							Thread.yield();
@@ -212,28 +210,22 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 							// coldestNode was removed from candles so, never duplicate persistence.
 							final int datasize = coldestNode.data.length();
 							long expectedDuration = LocalTime.now().until(coldestNode.hotTime, ChronoField.MILLI_OF_SECOND.getBaseUnit());
-							this.persistence.store(coldestNode.key, coldestNode.data, expectedDuration)
-							.thenRunAsync(()->{					
-								// synchronized to ensure retrieve never return null							
-								synchronized (coldestNode.key) {
-									coldestNode.data = null;
-								}
-								
-								this.usedSize.addAndGet(-datasize);
+							this.persistence.store(coldestNode.key, coldestNode.data, expectedDuration);
+							synchronized (coldestNode.key) {
+								coldestNode.data = null;
+							}
+							
+							this.usedSize.addAndGet(-datasize);
 
-								this.cleanUp();
-							}, this.manageExecutor);
-							queuedPersistance = true;
+							this.cleanUp();
 						}
 						
 						// add back to pool after used.
 						this.candlesPool.offer(coldestCandle);
-						
-						if (!queuedPersistance) {
-							this.cleanUp();
-						}
 					}
 				});
+				
+				return;
 			}
 			
 			Thread.yield();

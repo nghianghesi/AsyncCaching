@@ -15,7 +15,7 @@ class SerializerBase {
 	private Function<Object, Long> estimateObjectSizeFunc;
 	
 	// it's ok to in-thread safe here, as object override wouldn't cause any issue.
-	public static <T> SerializerBase getBinarySerializerBaseInstance(AsyncMemSerializer<T> serializer)
+	public static <T> SerializerBase getSerializerBaseInstance(AsyncMemSerializer<T> serializer)
 	{
 		SerializerBase inst = SerializerBase.instances.getOrDefault(serializer.getClass(), null);
 		if(inst == null)

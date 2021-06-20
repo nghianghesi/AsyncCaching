@@ -36,7 +36,7 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 			return this.updownLock.lockable();
 		}
 	}
-
+	
 	public void unlock() {
 		if (updownLock != null) {
 			this.updownLock.unlock();
