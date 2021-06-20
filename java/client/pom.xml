@@ -6,4 +6,21 @@
     <version>0.0.1-SNAPSHOT</version>
   </parent>
   <artifactId>asyncMemManager.client</artifactId>
+  <dependencies>
+    <dependency>
+	    <groupId>asyncMemManager</groupId>
+	    <artifactId>asyncMemManager.common</artifactId>
+	    <version>${asyncMemManager.version}</version>
+    </dependency>
+  <dependency>
+      <groupId>com.squareup.retrofit2</groupId>
+      <artifactId>retrofit</artifactId>
+      <version>${retrofit.verion}</version>
+  </dependency>
+  <dependency>
+      <groupId>com.squareup.retrofit2</groupId>
+      <artifactId>converter-gson</artifactId>
+      <version>${retrofit.verion}</version>
+  </dependency>
+  </dependencies>
 </project>

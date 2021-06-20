@@ -5,15 +5,19 @@
     <artifactId>asyncMemManager</artifactId>
     <version>0.0.1-SNAPSHOT</version>
   </parent>
-  <groupId>asyncMemManager</groupId>
   <artifactId>asyncMemManager.server</artifactId>
   <name>asyncMemManager.server</name>
   <description>async mem manager server</description>
   <dependencies>
     <dependency>
+      <groupId>asyncMemManager</groupId>
+      <artifactId>asyncMemManager.common</artifactId>
+      <version>${asyncMemManager.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webflux</artifactId>
-    </dependency>
+    </dependency>   
 
     <dependency>
       <groupId>org.springframework.boot</groupId>
