@@ -19,15 +19,15 @@ import asyneMemManager.clientDemo.model.TestEntity;
 public class DemoApp {
 
 	public static void main(String[] args) {
-		ExecutorService executor = Executors.newFixedThreadPool(5);
+		ExecutorService executor = Executors.newFixedThreadPool(3);
 		
 
 		int capacity = 20 * TestEntity.LARGE_PROPERTY_SIZE;
 		int initialSize = 20;
 		int cleanupInterval = 3600;
-		int candelPoolSize = 2;
+		int candlePoolSize = 4;
 		Map<String, asyncMemManager.common.FlowKeyConfiguration> flowKeyConfig = new HashMap<>();
-		asyncMemManager.common.Configuration config = new asyncMemManager.common.Configuration(capacity, initialSize, cleanupInterval, candelPoolSize, flowKeyConfig);
+		asyncMemManager.common.Configuration config = new asyncMemManager.common.Configuration(capacity, initialSize, cleanupInterval, candlePoolSize, flowKeyConfig);
 				
 		Persistence memCachePersistence = new MemCacheServerPersistence("http://localhost:8080/");
 		HotTimeCalculator hotTimeCalculator = new RandomHotTimeCalculator();
@@ -35,52 +35,74 @@ public class DemoApp {
 		
 		// TODO Auto-generated method stub
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();
-		int n = 100;
+		int n = 800;
 		for (int i=0; i<n; i++)
 		{			
 			System.out.print("Queuing "+i);
 			final AsyncMemManager.SetupObject<TestEntity> setupEntity = memManager.manage("DemoFlow", TestEntity.initLargeObject(), TestEntity.TestEntityAsyncMemSerializer.Instance);
-			final AsyncMemManager.AsyncObject<TestEntity> e = setupEntity.asyncObject();
+			final AsyncMemManager.AsyncObject<TestEntity> e12 = setupEntity.asyncObject();
+			final AsyncMemManager.AsyncObject<TestEntity> e3 = setupEntity.asyncObject();
 			final int idx = i;
+			
+			CompletableFuture<Void> t = CompletableFuture.runAsync(()->{
+				System.out.println("First Async "+ idx + e12.supply((o)->o.getSomeText()));
+				try {
+					Thread.sleep(1000 + new Random().nextInt()%1000);
+				} catch (InterruptedException ex) {
+					// TODO Auto-generated catch block
+					ex.printStackTrace();
+				}
+			}, executor);
+			
 			tasks.add(
-				CompletableFuture.runAsync(()->{
-					System.out.println("First Async "+ idx + e.supply((o)->o.getSomeText()));
+				t.thenRunAsync(()->{					
 					try {
-						Thread.sleep(1000 + new Random().nextInt()%1000);
-					} catch (InterruptedException e1) {
+						e12.close(); // close as this is last access
+					} catch (Exception ex) {
 						// TODO Auto-generated catch block
-						e1.printStackTrace();
+						ex.printStackTrace();
 					}
-				}, executor)
-				.thenRunAsync(()->{
-					System.out.println("2nd Async "+ idx + e.supply((o)->o.getSomeText())); 
-					try {
-						Thread.sleep(1000 + new Random().nextInt()%1000);
-					} catch (InterruptedException e1) {
-						// TODO Auto-generated catch block
-						e1.printStackTrace();
-					}
-				}, executor)
-				.thenRunAsync(()->{
-					System.out.println("3rd Async "+ idx + e.supply((o)->o.getSomeText()));
-					try {
-						Thread.sleep(1000 + new Random().nextInt()%1000);
-					} catch (InterruptedException e1) {
-						// TODO Auto-generated catch block
-						e1.printStackTrace();
-					} 
+					
+					e12.apply((o) ->{
+						System.out.println("2nd Async "+ idx + o.getSomeText());
+					});
 					
 					try {
-						e.close();
-					} catch (Exception e1) {
+						Thread.sleep(1000 + new Random().nextInt()%1000);
+					} catch (InterruptedException ex) {
 						// TODO Auto-generated catch block
-						e1.printStackTrace();
+						ex.printStackTrace();
 					}
+				}, executor));
+			
+			tasks.add(t.thenRunAsync(()->{				
+					try {
+						e3.close(); // close as this is last e3 access
+					} catch (Exception ex) {
+						// TODO Auto-generated catch block
+						ex.printStackTrace();
+					}
+					
+					System.out.println("3rd Async "+ idx + e3.supply((o)->o.getSomeText()));
+					try {
+						Thread.sleep(1000 + new Random().nextInt()%1000);
+					} catch (InterruptedException ex) {
+						// TODO Auto-generated catch block
+						ex.printStackTrace();
+					} 
 				}, executor));
 			
 			try {
 				setupEntity.close();
 			} catch (Exception e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
+			
+			
+			try {
+				Thread.sleep(10);
+			} catch (InterruptedException e1) {
 				// TODO Auto-generated catch block
 				e1.printStackTrace();
 			}

@@ -15,23 +15,24 @@ public class DemoErrorApp {
 		
 		// TODO Auto-generated method stub
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();
-		int n = 200;
+		int n = 800;
 		for (int i=0; i<n; i++)
 		{						
 			System.out.print("Queuing "+i);
 			final TestEntity e = TestEntity.initLargeObject();
 			final int idx = i;
+			
+			CompletableFuture<Void> t=CompletableFuture.runAsync(()->{
+				System.out.println("First Async "+ idx + e.getSomeText());
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException e1) {
+					// TODO Auto-generated catch block
+					e1.printStackTrace();
+				}
+			}, executor); 
 			tasks.add(
-				CompletableFuture.runAsync(()->{
-					System.out.println("First Async "+ idx + e.getSomeText());
-					try {
-						Thread.sleep(1000);
-					} catch (InterruptedException e1) {
-						// TODO Auto-generated catch block
-						e1.printStackTrace();
-					}
-				}, executor)
-				.thenRunAsync(()->{
+				t.thenRunAsync(()->{
 					System.out.println("2nd Async "+ idx + e.getSomeText()); 
 					try {
 						Thread.sleep(1000);
@@ -39,8 +40,9 @@ public class DemoErrorApp {
 						// TODO Auto-generated catch block
 						e1.printStackTrace();
 					}
-				}, executor)
-				.thenRunAsync(()->{
+				}, executor));
+			tasks.add(
+				t.thenRunAsync(()->{
 					System.out.println("3rd Async "+ idx + e.getSomeText());
 					try {
 						Thread.sleep(1000);
@@ -48,7 +50,13 @@ public class DemoErrorApp {
 						// TODO Auto-generated catch block
 						e1.printStackTrace();
 					} 
-				}, executor));
+				}, executor));			
+			try {
+				Thread.sleep(10);
+			} catch (InterruptedException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
 		}
 		
 		System.out.println("All tasks queued. expecting out of heap error ....");

@@ -1,6 +1,6 @@
 package asyncCache.client.di;
 
-import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import asyncMemManager.common.di.AsyncMemSerializer;
@@ -15,7 +15,7 @@ public interface AsyncMemManager extends AutoCloseable{
 	
 	public interface AsyncObject<T> extends AutoCloseable
 	{		
-		public <R> CompletableFuture<R> async(Function<T,R> f);
 		public <R> R supply(Function<T,R> f);
+		public void apply(Consumer<T> f);
 	}
 }
