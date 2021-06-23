@@ -19,7 +19,7 @@ public class AsyncMemCacheApp {
 
 	@Bean
 	public AsyncMemCache AsyncMemCacheBean() {
-		int capacity = 100 * 1024;
+		int capacity = 500 * 1024;
 		int initialSize = 100;
 		int cleanupInterval = 3600;
 		int candelPoolSize = 4;

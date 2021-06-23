@@ -7,7 +7,7 @@ import asyncMemManager.common.di.AsyncMemSerializer;
 public class TestEntity {
 	private String stringProperty;
 	private int[] largeProperty;
-	public static final int LARGE_PROPERTY_SIZE = 40000;
+	public static final int LARGE_PROPERTY_SIZE = 10000;
 	
 	public static TestEntity initLargeObject() {
 		TestEntity e = new TestEntity();

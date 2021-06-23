@@ -87,6 +87,15 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
         
         return null;
     }
+	
+	@SuppressWarnings("unchecked")
+	public void syncPriorityAt(int i) {
+		T moved = (T)queue[i];
+        siftDownUsingComparator(i, moved);
+        if (queue[i] == moved) {
+        	siftUpUsingComparator(i, moved);
+        }
+	}
     
     @SuppressWarnings("unchecked")
 	private void siftUpUsingComparator(int k, T x) {
