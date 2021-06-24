@@ -7,6 +7,7 @@ import asyncMemManager.common.di.AsyncMemSerializer;
 
 public interface AsyncMemManager extends AutoCloseable{
 	public <T> SetupObject<T> manage(String flowKey, T object, AsyncMemSerializer<T> serializer);
+	public String debugInfo(); 
 	
 	public interface SetupObject<T> extends AutoCloseable{
 		public AsyncObject<T> asyncObject();

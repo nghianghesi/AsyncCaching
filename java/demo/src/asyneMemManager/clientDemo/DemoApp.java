@@ -21,7 +21,7 @@ public class DemoApp {
 	public static void main(String[] args) {
 		ExecutorService executor = Executors.newFixedThreadPool(20);		
 
-		int capacity = 20 * TestEntity.LARGE_PROPERTY_SIZE;
+		int capacity = 200 * TestEntity.LARGE_PROPERTY_SIZE;
 		int initialSize = 20;
 		int cleanupInterval = 3600;
 		int candlePoolSize = 4;
@@ -62,8 +62,10 @@ public class DemoApp {
 					}
 					
 					e12.apply((o) ->{
-						System.out.println("2nd Async "+ idx + o.getSomeText());
+						System.out.println("2nd Async "+ idx +" "+ o.getSomeText());
 					});
+					
+					System.out.println(memManager.debugInfo());
 					
 					try {
 						Thread.sleep(1000 + new Random().nextInt(500));
@@ -81,7 +83,10 @@ public class DemoApp {
 						ex.printStackTrace();
 					}
 					
-					System.out.println("3rd Async "+ idx + e3.supply((o)->o.getSomeText()));
+					System.out.println("3rd Async "+ idx +" "+ e3.supply((o)->o.getSomeText()));
+					
+					System.out.println(memManager.debugInfo());
+					
 					try {
 						Thread.sleep(1500 + new Random().nextInt(500));
 					} catch (InterruptedException ex) {
@@ -108,6 +113,7 @@ public class DemoApp {
 		System.out.println("All tasks queued");
 		CompletableFuture.allOf(tasks.toArray(new CompletableFuture<?>[0])).join();
 		System.out.print("All tasks completed");
+		System.out.println(memManager.debugInfo());
 		executor.shutdown();
 		
 		try {

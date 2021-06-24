@@ -88,6 +88,19 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		
 		return new SetupObject<T>(managedObj);
 	}
+	
+	public String debugInfo()
+	{
+		StringBuilder res = new StringBuilder();
+		res.append("Used:"); res.append(this.usedSize.get());		
+		long countItems = 0;
+		for(ManagedObjectQueue<ManagedObjectBase> queue: this.candlesSrc)
+		{
+			countItems += queue.size();
+		}
+		res.append(" Items:"); res.append(countItems);
+		return res.toString();
+	}
 
 	@Override
 	public void close() throws Exception {
@@ -115,49 +128,53 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 			
 			long waitTime = managedObj.startTime.until(localNow, ChronoField.MILLI_OF_SECOND.getBaseUnit());
 			managedObj.startTime = managedObj.hotTime = localNow;
-			long nextwaitDuration = this.hotTimeCalculator.calculate(this.config, managedObj.flowKey, managedObj.accessTimeCounter, waitTime);
-			managedObj.accessTimeCounter++;
+			long nextwaitDuration = this.hotTimeCalculator.calculate(this.config, managedObj.flowKey, managedObj.numberOfAccess, waitTime);
+			managedObj.numberOfAccess++;
 
 			if (containerCandle == null)
 			{
 				// put node to candle	
 				managedObj.hotTime = managedObj.hotTime.plus(nextwaitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());	
 				
+				boolean spaceReserved = true;
 				if (this.usedSize.get() + managedObj.estimatedSize > this.config.getCapacity()) {
 					ManagedObjectBase coldestNode = this.getColdestCandidate();
-					
-					boolean spaceReserved = false; 
+					spaceReserved = false;					 
 					if (coldestNode != null && coldestNode.hotTime.compareTo(managedObj.hotTime) >= 0 
 							&& coldestNode.estimatedSize >= managedObj.estimatedSize)
 					{
 						// storing to cache to reserve space for new object.
 						spaceReserved = this.doManageAction(coldestNode, ManagementState.Managing, 
-								(final ManagedObjectQueue<ManagedObjectBase> coldestCandle) -> { this.storingCache(coldestCandle, coldestNode); });
+								(final ManagedObjectQueue<ManagedObjectBase> coldestCandle) -> { 
+									this.storingCache(coldestCandle, coldestNode); 
+								});
 					}
 		
 					// not enough space for new object, persist new object and done.
 					if (!spaceReserved) {
 						this.persistObject(managedObj, false);
-						return;
 					}
 				}
 				
-				ManagedObjectQueue<ManagedObjectBase> candle = null;
-				try {
-					candle = this.candlesPool.take();
-				} catch (InterruptedException e) {
-					return;
+				if (spaceReserved)
+				{
+					ManagedObjectQueue<ManagedObjectBase> candle = null;
+					try {
+						candle = this.candlesPool.take();
+					} catch (InterruptedException e) {
+						return;
+					}
+			
+					if (!managedObj.isObsoleted()) {
+						candle.add(managedObj);
+						managedObj.setManagementState(candle);					
+						this.usedSize.addAndGet(managedObj.estimatedSize);
+					}
+					
+					this.candlesPool.offer(candle);
+					
+					this.cleanUp();
 				}
-		
-				if (!managedObj.isObsoleted()) {
-					candle.add(managedObj);
-					managedObj.setManagementState(candle);					
-					this.usedSize.addAndGet(managedObj.estimatedSize);
-				}
-				
-				this.candlesPool.offer(candle);
-				
-				this.cleanUp();
 			}else {
 				while(!this.candlesPool.remove(containerCandle))
 				{
@@ -207,7 +224,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		ManagedObjectQueue<ManagedObjectBase> containerCandle = null;
 		final ManagementState currentState = managedObj.getManagementState();
 		if (expectedCurrentState.contains(currentState)) { 
-			synchronized (managedObj.key) { // to ensure only one manage action queued for this managedObj
+			synchronized (managedObj) { // to ensure only one manage action queued for this managedObj
 				if (managedObj.getManagementState() == currentState) 
 				{ 
 					containerCandle = managedObj.setManagementState(AsyncMemManager.queuedForManageCandle);
@@ -269,6 +286,11 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 			this.cleanUp();
 			
 			queuedPersistance = true;
+		}else {
+			if (isCleanup)
+			{
+				this.usedSize.addAndGet(-managedObject.estimatedSize);
+			}
 		}
 		
 		return queuedPersistance;
@@ -371,7 +393,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		 */
 		int candleIndex;
 		
-		int accessTimeCounter = 0;
+		int numberOfAccess = 0;
 		
 		/**
 		 * the serializer to ser/des object for persistence.
