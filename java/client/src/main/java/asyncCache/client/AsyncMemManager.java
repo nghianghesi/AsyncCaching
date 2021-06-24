@@ -1,5 +1,6 @@
 package asyncCache.client;
 
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoField;
 import java.util.*;
@@ -81,10 +82,9 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		}
 		
 		SerializerBase baseSerializer = SerializerBase.getSerializerBaseInstance(serializer);
-		LocalTime startTime = LocalTime.now();
 		long estimatedSize = serializer.estimateObjectSize(object);
 		
-		ManagedObject<T> managedObj = new ManagedObject<>(flowKey, object, startTime, estimatedSize, baseSerializer);
+		ManagedObject<T> managedObj = new ManagedObject<>(flowKey, object,  estimatedSize, baseSerializer);
 		
 		return new SetupObject<T>(managedObj);
 	}
@@ -123,40 +123,32 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	
 	private void startTracking(ManagedObjectBase managedObj) {		
 		this.doManageAction(managedObj, EnumSet.of(ManagementState.None, ManagementState.Managing), (containerCandle) ->{
-			
-			LocalTime localNow = LocalTime.now();
-			
-			long waitTime = managedObj.startTime.until(localNow, ChronoField.MILLI_OF_SECOND.getBaseUnit());
-			managedObj.startTime = managedObj.hotTime = localNow;
-			long nextwaitDuration = this.hotTimeCalculator.calculate(this.config, managedObj.flowKey, managedObj.numberOfAccess, waitTime);
-			managedObj.numberOfAccess++;
+				
+			long nextwaitDuration = this.hotTimeCalculator.calculate(this.config, managedObj.flowKey, managedObj.numberOfAccess);
+			managedObj.hotTime = managedObj.startTime.plus(nextwaitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());	
 
-			if (containerCandle == null)
+			if (containerCandle == null) // unmanaged, probably none or cached.
 			{
 				// put node to candle	
-				managedObj.hotTime = managedObj.hotTime.plus(nextwaitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());	
 				
-				boolean spaceReserved = true;
+				boolean needTracking = true;
 				if (this.usedSize.get() + managedObj.estimatedSize > this.config.getCapacity()) {
 					ManagedObjectBase coldestNode = this.getColdestCandidate();
-					spaceReserved = false;					 
-					if (coldestNode != null && coldestNode.hotTime.compareTo(managedObj.hotTime) >= 0 
-							&& coldestNode.estimatedSize >= managedObj.estimatedSize)
+					
+					if (coldestNode != null && coldestNode.hotTime.compareTo(managedObj.hotTime) >= 0)
 					{
 						// storing to cache to reserve space for new object.
-						spaceReserved = this.doManageAction(coldestNode, ManagementState.Managing, 
+						this.doManageAction(coldestNode, ManagementState.Managing, 
 								(final ManagedObjectQueue<ManagedObjectBase> coldestCandle) -> { 
-									this.storingCache(coldestCandle, coldestNode); 
+									this.cache(coldestCandle, coldestNode); 
 								});
-					}
-		
-					// not enough space for new object, persist new object and done.
-					if (!spaceReserved) {
+					}else {						 
 						this.persistObject(managedObj, false);
+						needTracking = false;
 					}
 				}
 				
-				if (spaceReserved)
+				if (needTracking)
 				{
 					ManagedObjectQueue<ManagedObjectBase> candle = null;
 					try {
@@ -167,8 +159,8 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 			
 					if (!managedObj.isObsoleted()) {
 						candle.add(managedObj);
-						managedObj.setManagementState(candle);					
 						this.usedSize.addAndGet(managedObj.estimatedSize);
+						managedObj.setManagementState(candle);					
 					}
 					
 					this.candlesPool.offer(candle);
@@ -185,8 +177,9 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				{
 					managedObj.hotTime = managedObj.hotTime.plus(nextwaitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());	
 					containerCandle.syncPriorityAt(managedObj.candleIndex);
-					managedObj.setManagementState(containerCandle);
+					managedObj.setManagementState(containerCandle); // restore management state
 				}
+				
 				this.candlesPool.offer(containerCandle);
 			}
 			
@@ -264,9 +257,8 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		return coldestCandidate;
 	}
 	
-	private boolean persistObject(ManagedObjectBase managedObject, boolean isCleanup)
+	private void persistObject(ManagedObjectBase managedObject, boolean isManaging)
 	{
-		boolean queuedPersistance = false;
 		if (managedObject.asyncCounter.get() > 0)
 		{
 			final ReadWriteLock<ManagedObjectBase> lock = managedObject.lockManage();
@@ -275,32 +267,26 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				long expectedDuration = LocalTime.now().until(managedObject.hotTime, ChronoField.MILLI_OF_SECOND.getBaseUnit());
 				this.persistence.store(managedObject.key, managedObject.serializer.serialize(managedObject.object), expectedDuration);
 				managedObject.object = null;
-				if (isCleanup)
+				if (isManaging)
 				{
 					this.usedSize.addAndGet(-managedObject.estimatedSize);
 				}
 				managedObject.setManagementState(null);	
 			}
 			lock.unlock();
-
-			this.cleanUp();
 			
-			queuedPersistance = true;
 		}else {
-			if (isCleanup)
+			if (isManaging)
 			{
 				this.usedSize.addAndGet(-managedObject.estimatedSize);
 			}
 		}
-		
-		return queuedPersistance;
 	}
 	
 	/*
 	 * need containerCandle as managedObject's containerCandle may be marked as queued.
 	 */
-	private boolean storingCache(ManagedObjectQueue<ManagedObjectBase> containerCandle, ManagedObjectBase managedObject) {
-		boolean queuedPersistance =false;
+	private void cache(ManagedObjectQueue<ManagedObjectBase> containerCandle, ManagedObjectBase managedObject) {
 		while(!this.candlesPool.remove(containerCandle))
 		{
 			Thread.yield();
@@ -309,39 +295,37 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		if (managedObject.candleIndex >= 0)  // check again to ensure nothing changed by other thread
 		{													
 			containerCandle.removeAt(managedObject.candleIndex);
-			queuedPersistance = this.persistObject(managedObject, true);
+			this.persistObject(managedObject, true);
 		}
 		
 		// add back to pool after used.
 		this.candlesPool.offer(containerCandle);
-		return queuedPersistance;
 	}
 	/**
 	 * this is expected to be run in manage executor, by queueCleanUp
 	 */
 	private void cleanUp()
 	{
-		boolean queuedLoopCleanup = false;
-		while (!queuedLoopCleanup && this.isOverCapability())
+		while (this.isOverCapability())
 		{
+			boolean isReduced = false;
 			// find the coldest candidate
 			final ManagedObjectBase coldestObject = this.getColdestCandidate();
 			
 			// candidate founded
 			if (coldestObject != null)
 			{							
-				queuedLoopCleanup = this.doManageAction(coldestObject, ManagementState.Managing, 
+				isReduced = this.doManageAction(coldestObject, ManagementState.Managing, 
 						(final ManagedObjectQueue<ManagedObjectBase> coldestCandle) -> {
-							boolean queuedPersistance = this.storingCache(coldestCandle, coldestObject);
-									
-							if (!queuedPersistance) {
-								this.cleanUp();
-							}
+							this.cache(coldestCandle, coldestObject);
 					});
 			}
 			
-			Thread.yield();
-		}		
+			if (!isReduced)
+			{
+				Thread.yield();
+			}
+		}
 	}
 	
 	
@@ -371,12 +355,12 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		/**
 		 * time object managed
 		 */
-		LocalTime startTime;
+		LocalDateTime startTime;
 		
 		/**
 		 * time object expected to be retrieved for async, this is average from previous by keyflow
 		 */
-		LocalTime hotTime;
+		LocalDateTime hotTime;
 		
 		/**
 		 * estimated by serializer, size of object
@@ -403,10 +387,10 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		/**
 		 * init  ManagedObject 
 		 */
-		public ManagedObjectBase(String flowKey, LocalTime startTime, long estimatedSize, SerializerBase serializer) {
+		public ManagedObjectBase(String flowKey, long estimatedSize, SerializerBase serializer) {
 			this.flowKey = flowKey;
 			this.key = UUID.randomUUID();
-			this.startTime = this.hotTime = startTime;
+			this.startTime = this.hotTime = LocalDateTime.now();
 			this.estimatedSize = estimatedSize;
 			this.serializer = serializer;
 		}
@@ -511,9 +495,9 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	 */
 	class ManagedObject<T> extends ManagedObjectBase
 	{
-		ManagedObject(String flowKey, T obj, LocalTime startTime, long estimatedSize, SerializerBase serializer)
+		ManagedObject(String flowKey, T obj, long estimatedSize, SerializerBase serializer)
 		{
-			super(flowKey, startTime, estimatedSize, serializer);
+			super(flowKey, estimatedSize, serializer);
 			this.object = obj;
 		}
 	}
@@ -562,6 +546,11 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				
 				manageLock.downgrade();
 			} 
+			
+			long waittime = this.managedObject.startTime.until(LocalDateTime.now(), ChronoField.MILLI_OF_SECOND.getBaseUnit());
+			AsyncMemManager.this.hotTimeCalculator.stats(AsyncMemManager.this.config, this.managedObject.flowKey, this.managedObject.numberOfAccess, waittime);
+			this.managedObject.startTime = LocalDateTime.now();
+			this.managedObject.numberOfAccess++;
 		}
 		
 		private void trackIfNeeded() {

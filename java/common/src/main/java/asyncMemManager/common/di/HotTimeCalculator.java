@@ -3,5 +3,6 @@ package asyncMemManager.common.di;
 import asyncMemManager.common.Configuration;
 
 public interface HotTimeCalculator {
-	public long calculate(Configuration config, String flowKey, int nth, long waittime);
+	public void stats(Configuration config, String flowKey, int nth, long waittime);
+	public long calculate(Configuration config, String flowKey, int nth);
 }
