@@ -11,16 +11,15 @@ import java.util.concurrent.Executors;
 
 import asyncCache.client.MemCacheServerPersistence;
 import asyncCache.client.di.AsyncMemManager;
+import asyncMemManager.common.AvgWaitTimeCalculator;
 import asyncMemManager.common.di.HotTimeCalculator;
 import asyncMemManager.common.di.Persistence;
-import asyneMemManager.clientDemo.model.RandomHotTimeCalculator;
 import asyneMemManager.clientDemo.model.TestEntity;
 
 public class DemoApp {
 
 	public static void main(String[] args) {
-		ExecutorService executor = Executors.newFixedThreadPool(3);
-		
+		ExecutorService executor = Executors.newFixedThreadPool(20);		
 
 		int capacity = 20 * TestEntity.LARGE_PROPERTY_SIZE;
 		int initialSize = 20;
@@ -30,7 +29,7 @@ public class DemoApp {
 		asyncMemManager.common.Configuration config = new asyncMemManager.common.Configuration(capacity, initialSize, cleanupInterval, candlePoolSize, flowKeyConfig);
 				
 		Persistence memCachePersistence = new MemCacheServerPersistence("http://localhost:8080/");
-		HotTimeCalculator hotTimeCalculator = new RandomHotTimeCalculator();
+		HotTimeCalculator hotTimeCalculator = new AvgWaitTimeCalculator(1500);
 		AsyncMemManager memManager = new asyncCache.client.AsyncMemManager(config, hotTimeCalculator, memCachePersistence);
 		
 		// TODO Auto-generated method stub
@@ -47,7 +46,7 @@ public class DemoApp {
 			CompletableFuture<Void> t = CompletableFuture.runAsync(()->{
 				System.out.println("First Async "+ idx + e12.supply((o)->o.getSomeText()));
 				try {
-					Thread.sleep(1000 + new Random().nextInt()%1000);
+					Thread.sleep(500 + new Random().nextInt()%500);
 				} catch (InterruptedException ex) {
 					// TODO Auto-generated catch block
 					ex.printStackTrace();
@@ -68,7 +67,7 @@ public class DemoApp {
 					});
 					
 					try {
-						Thread.sleep(1000 + new Random().nextInt()%1000);
+						Thread.sleep(1000 + new Random().nextInt()%500);
 					} catch (InterruptedException ex) {
 						// TODO Auto-generated catch block
 						ex.printStackTrace();
@@ -85,7 +84,7 @@ public class DemoApp {
 					
 					System.out.println("3rd Async "+ idx + e3.supply((o)->o.getSomeText()));
 					try {
-						Thread.sleep(1000 + new Random().nextInt()%1000);
+						Thread.sleep(1500 + new Random().nextInt()%500);
 					} catch (InterruptedException ex) {
 						// TODO Auto-generated catch block
 						ex.printStackTrace();
@@ -95,14 +94,6 @@ public class DemoApp {
 			try {
 				setupEntity.close();
 			} catch (Exception e1) {
-				// TODO Auto-generated catch block
-				e1.printStackTrace();
-			}
-			
-			
-			try {
-				Thread.sleep(10);
-			} catch (InterruptedException e1) {
 				// TODO Auto-generated catch block
 				e1.printStackTrace();
 			}

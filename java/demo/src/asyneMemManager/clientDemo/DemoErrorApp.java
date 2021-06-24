@@ -50,13 +50,7 @@ public class DemoErrorApp {
 						// TODO Auto-generated catch block
 						e1.printStackTrace();
 					} 
-				}, executor));			
-			try {
-				Thread.sleep(10);
-			} catch (InterruptedException e1) {
-				// TODO Auto-generated catch block
-				e1.printStackTrace();
-			}
+				}, executor));	
 		}
 		
 		System.out.println("All tasks queued. expecting out of heap error ....");
