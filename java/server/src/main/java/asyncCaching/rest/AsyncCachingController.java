@@ -36,4 +36,9 @@ public class AsyncCachingController {
 		this.logger.info("Remove {}", key);
 	    this.asyncMemCache.retrieve(key);
 	}
+	
+	@RequestMapping(method = RequestMethod.GET, value = "/cache/stats")
+	public long stats() {
+	    return this.asyncMemCache.size();
+	}
 }

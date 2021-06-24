@@ -32,7 +32,6 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 																			(n1.isObsoleted()) ? -1 : 
 																			n2.hotTime.compareTo(n1.hotTime);
 
-
 	/**
 	 * Construct Async Mem Manager
 	 * @param config
@@ -111,11 +110,18 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	
 	private void startTracking(ManagedObjectBase managedObj) {		
 		this.doManageAction(managedObj, EnumSet.of(ManagementState.None, ManagementState.Managing), (containerCandle) ->{
+			
+			LocalTime localNow = LocalTime.now();
+			
+			long waitTime = managedObj.startTime.until(localNow, ChronoField.MILLI_OF_SECOND.getBaseUnit());
+			managedObj.startTime = managedObj.hotTime = localNow;
+			long nextwaitDuration = this.hotTimeCalculator.calculate(this.config, managedObj.flowKey, managedObj.accessTimeCounter, waitTime);
+			managedObj.accessTimeCounter++;
+
 			if (containerCandle == null)
 			{
 				// put node to candle	
-				long waitDuration = this.hotTimeCalculator.calculate(this.config, managedObj.flowKey);			
-				managedObj.hotTime = managedObj.hotTime.plus(waitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());	
+				managedObj.hotTime = managedObj.hotTime.plus(nextwaitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());	
 				
 				if (this.usedSize.get() + managedObj.estimatedSize > this.config.getCapacity()) {
 					ManagedObjectBase coldestNode = this.getColdestCandidate();
@@ -143,10 +149,11 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 					return;
 				}
 		
-				candle.add(managedObj);
-				managedObj.setManagementState(candle);
-				
-				this.usedSize.addAndGet(managedObj.estimatedSize);
+				if (!managedObj.isObsoleted()) {
+					candle.add(managedObj);
+					managedObj.setManagementState(candle);					
+					this.usedSize.addAndGet(managedObj.estimatedSize);
+				}
 				
 				this.candlesPool.offer(candle);
 				
@@ -159,12 +166,13 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				
 				if(managedObj.candleIndex >= 0)
 				{
-					long waitDuration = this.hotTimeCalculator.calculate(this.config, managedObj.flowKey);			
-					managedObj.hotTime = managedObj.hotTime.plus(waitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());	
+					managedObj.hotTime = managedObj.hotTime.plus(nextwaitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());	
 					containerCandle.syncPriorityAt(managedObj.candleIndex);
+					managedObj.setManagementState(containerCandle);
 				}
 				this.candlesPool.offer(containerCandle);
 			}
+			
 		});
 	}
 	
@@ -191,7 +199,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		return doManageAction(managedObj, EnumSet.of(expectedCurrentState), action);
 	}
 	/**
-	 * queue manage action for managedObj, ensure only one action queued per object, bypass this request if other action queued.
+	 * execute manage action for managedObj, ensure only one action queued per object, bypass this request if other action queued.
 	 */
 	private boolean doManageAction(ManagedObjectBase managedObj, EnumSet<ManagementState> expectedCurrentState, Consumer<ManagedObjectQueue<ManagedObjectBase>> action)	
 	{
@@ -199,7 +207,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		ManagedObjectQueue<ManagedObjectBase> containerCandle = null;
 		final ManagementState currentState = managedObj.getManagementState();
 		if (expectedCurrentState.contains(currentState)) { 
-			synchronized (managedObj.startTime) { // to ensure only one manage action queued for this managedObj
+			synchronized (managedObj.key) { // to ensure only one manage action queued for this managedObj
 				if (managedObj.getManagementState() == currentState) 
 				{ 
 					containerCandle = managedObj.setManagementState(AsyncMemManager.queuedForManageCandle);
@@ -340,9 +348,8 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		
 		/**
 		 * time object managed
-		 * also used as key for ensuring only one manage action queued for this object.
 		 */
-		final LocalTime startTime;
+		LocalTime startTime;
 		
 		/**
 		 * time object expected to be retrieved for async, this is average from previous by keyflow
@@ -364,10 +371,12 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		 */
 		int candleIndex;
 		
+		int accessTimeCounter = 0;
+		
 		/**
 		 * the serializer to ser/des object for persistence.
 		 */
-		final SerializerBase serializer;	
+		final SerializerBase serializer;
 
 		/**
 		 * init  ManagedObject 
@@ -423,7 +432,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		/**
 		 * used for read/write locking this managed object. 
 		 */
-		private int accessCounter = 0;
+		private int readWriteCounter = 0;
 		
 		@Override
 		public void setIndexInQueue(int idx)
@@ -431,9 +440,12 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 			this.candleIndex = idx;
 		}
 		
+		/**
+		 * whether this object is available for cleanup
+		 */
 		@Override
 		public boolean isPeekable() {
-			return this.accessCounter == 0 && this.getManagementState() == ManagementState.Managing;
+			return this.readWriteCounter == 0 && this.getManagementState() == ManagementState.Managing;
 		}
 		
 		/**
@@ -453,11 +465,11 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		}
 		
 		public int getLockFactor() {
-			return this.accessCounter;
+			return this.readWriteCounter;
 		}
 		
 		public void addLockFactor(int lockfactor) {
-			this.accessCounter += lockfactor;
+			this.readWriteCounter += lockfactor;
 		}
 		
 		public Object getKeyLocker() {
