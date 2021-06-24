@@ -199,7 +199,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		return doManageAction(managedObj, EnumSet.of(expectedCurrentState), action);
 	}
 	/**
-	 * queue manage action for managedObj, ensure only one action queued per object, bypass this request if other action queued.
+	 * execute manage action for managedObj, ensure only one action queued per object, bypass this request if other action queued.
 	 */
 	private boolean doManageAction(ManagedObjectBase managedObj, EnumSet<ManagementState> expectedCurrentState, Consumer<ManagedObjectQueue<ManagedObjectBase>> action)	
 	{

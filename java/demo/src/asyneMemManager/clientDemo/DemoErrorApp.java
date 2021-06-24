@@ -2,6 +2,7 @@ package asyneMemManager.clientDemo;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,7 +26,7 @@ public class DemoErrorApp {
 			CompletableFuture<Void> t=CompletableFuture.runAsync(()->{
 				System.out.println("First Async "+ idx + e.getSomeText());
 				try {
-					Thread.sleep(1000);
+					Thread.sleep(500 + new Random().nextInt(500));
 				} catch (InterruptedException e1) {
 					// TODO Auto-generated catch block
 					e1.printStackTrace();
@@ -35,7 +36,7 @@ public class DemoErrorApp {
 				t.thenRunAsync(()->{
 					System.out.println("2nd Async "+ idx + e.getSomeText()); 
 					try {
-						Thread.sleep(1000);
+						Thread.sleep(1000 + new Random().nextInt(500));
 					} catch (InterruptedException e1) {
 						// TODO Auto-generated catch block
 						e1.printStackTrace();
@@ -45,12 +46,20 @@ public class DemoErrorApp {
 				t.thenRunAsync(()->{
 					System.out.println("3rd Async "+ idx + e.getSomeText());
 					try {
-						Thread.sleep(1000);
+						Thread.sleep(1500 + new Random().nextInt(500));
 					} catch (InterruptedException e1) {
 						// TODO Auto-generated catch block
 						e1.printStackTrace();
 					} 
 				}, executor));	
+
+			
+			try {
+				Thread.sleep(10 + new Random().nextInt(100));
+			} catch (InterruptedException ex) {
+				// TODO Auto-generated catch block
+				ex.printStackTrace();
+			} 			
 		}
 		
 		System.out.println("All tasks queued. expecting out of heap error ....");

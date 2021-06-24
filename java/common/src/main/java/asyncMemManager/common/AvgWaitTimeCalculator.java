@@ -38,7 +38,6 @@ public class AvgWaitTimeCalculator implements HotTimeCalculator{
 		
 		if (avg != null)
 		{
-			System.out.println("AvgWaitTimeCalculator " + nth + " " + avg.average);
 			return avg.average;
 		}else {
 			return this.defaultWaitTime;

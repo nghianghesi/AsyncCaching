@@ -151,6 +151,10 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		return null;
 	}
 	
+	public long size() {
+		return this.keyToObjectMap.size();
+	}
+	
 	private boolean isOverCapability()
 	{
 		return this.usedSize.get() > this.config.getCapacity();

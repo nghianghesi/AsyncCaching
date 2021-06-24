@@ -34,19 +34,18 @@ public class DemoApp {
 		
 		// TODO Auto-generated method stub
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();
-		int n = 800;
+		int n = 2000;
 		for (int i=0; i<n; i++)
 		{			
-			System.out.print("Queuing "+i);
 			final AsyncMemManager.SetupObject<TestEntity> setupEntity = memManager.manage("DemoFlow", TestEntity.initLargeObject(), TestEntity.TestEntityAsyncMemSerializer.Instance);
 			final AsyncMemManager.AsyncObject<TestEntity> e12 = setupEntity.asyncObject();
 			final AsyncMemManager.AsyncObject<TestEntity> e3 = setupEntity.asyncObject();
 			final int idx = i;
 			
 			CompletableFuture<Void> t = CompletableFuture.runAsync(()->{
-				System.out.println("First Async "+ idx + e12.supply((o)->o.getSomeText()));
+				System.out.println("First Async "+ idx + " " + e12.supply((o)->o.getSomeText()));
 				try {
-					Thread.sleep(500 + new Random().nextInt()%500);
+					Thread.sleep(500 + new Random().nextInt(500));
 				} catch (InterruptedException ex) {
 					// TODO Auto-generated catch block
 					ex.printStackTrace();
@@ -67,7 +66,7 @@ public class DemoApp {
 					});
 					
 					try {
-						Thread.sleep(1000 + new Random().nextInt()%500);
+						Thread.sleep(1000 + new Random().nextInt(500));
 					} catch (InterruptedException ex) {
 						// TODO Auto-generated catch block
 						ex.printStackTrace();
@@ -84,7 +83,7 @@ public class DemoApp {
 					
 					System.out.println("3rd Async "+ idx + e3.supply((o)->o.getSomeText()));
 					try {
-						Thread.sleep(1500 + new Random().nextInt()%500);
+						Thread.sleep(1500 + new Random().nextInt(500));
 					} catch (InterruptedException ex) {
 						// TODO Auto-generated catch block
 						ex.printStackTrace();
@@ -97,6 +96,13 @@ public class DemoApp {
 				// TODO Auto-generated catch block
 				e1.printStackTrace();
 			}
+			
+			try {
+				Thread.sleep(10 + new Random().nextInt(100));
+			} catch (InterruptedException ex) {
+				// TODO Auto-generated catch block
+				ex.printStackTrace();
+			} 
 		}
 		
 		System.out.println("All tasks queued");
