@@ -26,11 +26,6 @@ public class AvgWaitTimeCalculator implements HotTimeCalculator{
 			return this.defaultWaitTime;
 		}
 	}
-	
-	private static class WaitTimeStats{
-		int count;
-		long average;
-	}
 
 	@Override
 	public void stats(Configuration config, String flowKey, int nth, long waittime) {
@@ -50,5 +45,10 @@ public class AvgWaitTimeCalculator implements HotTimeCalculator{
 				avg.count = nextCount;
 			}
 		}
+	}
+	
+	private static class WaitTimeStats{
+		int count;
+		long average;
 	}
 }
