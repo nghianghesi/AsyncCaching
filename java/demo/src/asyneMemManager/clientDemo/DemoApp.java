@@ -19,9 +19,9 @@ import asyneMemManager.clientDemo.model.TestEntity;
 public class DemoApp {
 
 	public static void main(String[] args) {
-		ExecutorService executor = Executors.newFixedThreadPool(20);		
+		ExecutorService executor = Executors.newFixedThreadPool(10);		
 
-		int capacity = 200 * TestEntity.LARGE_PROPERTY_SIZE;
+		int capacity = 400 * TestEntity.LARGE_PROPERTY_SIZE;
 		int initialSize = 20;
 		int cleanupInterval = 3600;
 		int candlePoolSize = 4;
@@ -43,7 +43,7 @@ public class DemoApp {
 			final int idx = i;
 			
 			CompletableFuture<Void> t = CompletableFuture.runAsync(()->{
-				System.out.println("First Async "+ idx + " " + e12.supply((o)->o.getSomeText()));
+				System.out.println("1st Async "+ idx + " " + e12.supply((o)->o.getSomeText()));
 				try {
 					Thread.sleep(50 + new Random().nextInt(50));
 				} catch (InterruptedException ex) {

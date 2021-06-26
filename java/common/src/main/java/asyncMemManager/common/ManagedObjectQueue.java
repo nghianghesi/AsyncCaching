@@ -96,6 +96,12 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
         	siftUpUsingComparator(i, moved);
         }
 	}
+	
+	@SuppressWarnings("unchecked")
+	public T getAt(int i)
+	{
+		return (T)this.queue[i];
+	}
     
     @SuppressWarnings("unchecked")
 	private void siftUpUsingComparator(int k, T x) {

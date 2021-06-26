@@ -109,7 +109,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 			this.candlesPool.take();
 		}
 		
-		for (ManagedObjectQueue<ManagedObjectBase> candle:this.candlesSrc) {
+		for (ManagedObjectQueue<ManagedObjectBase> candle: this.candlesSrc) {
 			while(candle.size() > 0)
 			{
 				ManagedObjectBase managedObj = candle.removeAt(candle.size() - 1);
@@ -135,7 +135,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				if (this.usedSize.get() + managedObj.estimatedSize > this.config.getCapacity()) {
 					ManagedObjectBase coldestNode = this.getColdestCandidate();
 					
-					if (coldestNode != null && coldestNode.hotTime.compareTo(managedObj.hotTime) >= 0)
+					if (coldestNode != null && coldestNode.hotTime.compareTo(managedObj.hotTime) >= 0 && coldestNode != managedObj)
 					{
 						// storing to cache to reserve space for new object.
 						this.doManageAction(coldestNode, ManagementState.Managing, 
@@ -143,7 +143,8 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 									this.cache(coldestCandle, coldestNode); 
 								});
 					}else {						 
-						this.persistObject(managedObj, false);
+						this.persistObject(managedObj);
+						managedObj.setManagementState(null);
 						needTracking = false;
 					}
 				}
@@ -157,32 +158,52 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 						return;
 					}
 			
-					if (!managedObj.isObsoleted()) {
-						candle.add(managedObj);
-						this.usedSize.addAndGet(managedObj.estimatedSize);
-						managedObj.setManagementState(candle);					
-					}else {
-						managedObj.setManagementState(null);
+					try {
+						if (!managedObj.isObsoleted()) {
+							candle.add(managedObj);
+							this.usedSize.addAndGet(managedObj.estimatedSize);
+							managedObj.setManagementState(candle);					
+						}else {
+							managedObj.setManagementState(null);
+						}					
+					} 
+					catch(Exception ex) {
+						System.out.println(ex.getMessage());
 					}
-					
-					this.candlesPool.offer(candle);
+					finally {
+						this.candlesPool.offer(candle);
+					}
 					this.cleanUp();	
 					
 					needcheckRemove = true;
 				}
-			}else {
+			} else {
 				while(!this.candlesPool.remove(containerCandle))
 				{
 					Thread.yield();
 				}
 				
-				managedObj.hotTime = managedObj.hotTime.plus(nextwaitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());
-				if (!managedObj.isObsoleted()) {
-					containerCandle.syncPriorityAt(managedObj.candleIndex);
+				try {
+					managedObj.hotTime = managedObj.hotTime.plus(nextwaitDuration, ChronoField.MILLI_OF_SECOND.getBaseUnit());
+					if (!managedObj.isObsoleted()) {
+						containerCandle.syncPriorityAt(managedObj.candleIndex);
+						managedObj.setManagementState(containerCandle); // restore management state
+					}else {
+						
+						if(containerCandle.getAt(managedObj.candleIndex) != managedObj)
+						{
+							System.out.println("Invalid state");
+						}					
+						containerCandle.removeAt(managedObj.candleIndex);
+						managedObj.setManagementState(null);
+					}
 				}
-				managedObj.setManagementState(containerCandle); // restore management state
-				
-				this.candlesPool.offer(containerCandle);
+				catch(Exception ex) {
+					System.out.println(ex.getMessage());
+				}
+				finally {											
+					this.candlesPool.offer(containerCandle);
+				}
 				needcheckRemove = true;
 			}			
 
@@ -194,16 +215,27 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	
 	private void removeFromManagement(ManagedObjectBase managedObj) {
 		this.doManageAction(managedObj, ManagementState.Managing, (final ManagedObjectQueue<ManagedObjectBase> containerCandle) -> {
-			while(!this.candlesPool.remove(containerCandle))
+			while (!this.candlesPool.remove(containerCandle))
 			{
 				Thread.yield();
 			}
 			
-			containerCandle.removeAt(managedObj.candleIndex);
-			this.usedSize.addAndGet(-managedObj.estimatedSize);							
-			managedObj.setManagementState(null);
+			try {
+				if(containerCandle.getAt(managedObj.candleIndex) != managedObj)
+				{
+					System.out.println("Invalid state");
+				}
+				containerCandle.removeAt(managedObj.candleIndex);
+				this.usedSize.addAndGet(-managedObj.estimatedSize);							
+				managedObj.setManagementState(null);
 
-			this.candlesPool.offer(containerCandle);
+			}
+			catch(Exception ex) {
+				System.out.println(ex.getMessage());
+			}
+			 finally {
+				this.candlesPool.offer(containerCandle);
+			}
 		});
 	}
 	
@@ -218,10 +250,9 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	{
 		boolean queued = false;
 		ManagedObjectQueue<ManagedObjectBase> containerCandle = null;
-		final ManagementState currentState = managedObj.getManagementState();
-		if (expectedCurrentState.contains(currentState)) { 
-			synchronized (managedObj) { // to ensure only one manage action queued for this managedObj
-				if (managedObj.getManagementState() == currentState) 
+		if (expectedCurrentState.contains(managedObj.getManagementState())) { 
+			synchronized (managedObj) { 
+				if (expectedCurrentState.contains(managedObj.getManagementState())) // state unchanged. 
 				{ 
 					containerCandle = managedObj.setManagementState(AsyncMemManager.queuedForManageCandle);
 					queued = true;
@@ -260,7 +291,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		return coldestCandidate;
 	}
 	
-	private void persistObject(ManagedObjectBase managedObject, boolean isManaging)
+	private void persistObject(ManagedObjectBase managedObject)
 	{
 		if (managedObject.asyncCounter.get() > 0)
 		{
@@ -270,19 +301,8 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 				long expectedDuration = LocalTime.now().until(managedObject.hotTime, ChronoField.MILLI_OF_SECOND.getBaseUnit());
 				this.persistence.store(managedObject.key, managedObject.serializer.serialize(managedObject.object), expectedDuration);
 				managedObject.object = null;
-				if (isManaging)
-				{
-					this.usedSize.addAndGet(-managedObject.estimatedSize);
-				}
-				managedObject.setManagementState(null);	
 			}
-			lock.unlock();
-			
-		}else {
-			if (isManaging)
-			{
-				this.usedSize.addAndGet(-managedObject.estimatedSize);
-			}
+			lock.unlock();			
 		}
 	}
 	
@@ -294,12 +314,26 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		{
 			Thread.yield();
 		}
-																			
-		containerCandle.removeAt(managedObject.candleIndex);
-		this.persistObject(managedObject, true);
 		
-		// add back to pool after used.
-		this.candlesPool.offer(containerCandle);
+		try {
+			if(containerCandle.getAt(managedObject.candleIndex) != managedObject)
+			{
+				System.out.println("Invalid state");
+			}
+	
+			containerCandle.removeAt(managedObject.candleIndex);
+			this.usedSize.addAndGet(-managedObject.estimatedSize);
+			this.persistObject(managedObject);
+			managedObject.setManagementState(null);
+		
+		} 
+		catch(Exception ex) {
+			System.out.println(ex.getMessage());
+		}
+		finally {
+			// add back to pool after used.
+			this.candlesPool.offer(containerCandle);
+		}
 	}
 	/**
 	 * this is expected to be run in manage executor, by queueCleanUp
@@ -355,12 +389,12 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		/**
 		 * time object managed
 		 */
-		LocalDateTime startTime;
+		volatile LocalDateTime startTime;
 		
 		/**
 		 * time object expected to be retrieved for async, this is average from previous by keyflow
 		 */
-		LocalDateTime hotTime;
+		volatile LocalDateTime hotTime;
 		
 		/**
 		 * estimated by serializer, size of object
@@ -375,9 +409,9 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		/**
 		 * the index of object in candle, used for fast removal
 		 */
-		int candleIndex;
+		volatile int candleIndex;
 		
-		int numberOfAccess = 0;
+		volatile int numberOfAccess = 0;
 		
 		/**
 		 * the serializer to ser/des object for persistence.
@@ -439,7 +473,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 		/**
 		 * used for read/write locking this managed object. 
 		 */
-		private int readWriteCounter = 0;
+		private volatile int readWriteCounter = 0;
 		
 		@Override
 		public void setIndexInQueue(int idx)
