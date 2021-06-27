@@ -9,13 +9,13 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 	private int lockFactor;
 	private T object;
 
-	protected ReadWriteLock(T obj, int lockFactor) {
+	protected void initLock(T obj, int lockFactor) {
 		this.object = obj;
 		this.lockFactor = lockFactor;
-
+		
 		while (true) {
 			if (this.lockable()) {
-				synchronized (this.object.getKeyLocker()) {
+				synchronized (this.object.getLockerKey()) {
 					if (this.lockable()) {
 						this.object.addLockFactor(this.lockFactor);
 						return;
@@ -27,14 +27,20 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 		}
 	}
 
+	private void initUpdownLock(T obj, int lockFactor) {
+		this.object = obj;
+		this.lockFactor = lockFactor;
+		this.object.addLockFactor(this.lockFactor);
+	}
+	
 	private boolean lockable() {
-		if (this.updownLock == null)
+		if (this.updownLock != null)
 		{
-			return ((lockFactor < 0 && this.object.getLockFactor() <= 0)
-					|| (lockFactor > 0 && this.object.getLockFactor() == 0));
-		}else {
 			return this.updownLock.lockable();
 		}
+		
+		return ((lockFactor == 2 && (this.object.getLockFactor() & 1) == 0)
+				|| (lockFactor == 1 && this.object.getLockFactor() == 0));
 	}
 	
 	public void unlock() {
@@ -42,7 +48,7 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 			this.updownLock.unlock();
 		} else {
 			if (!this.unlocked) {
-				synchronized (this.object.getKeyLocker()) {
+				synchronized (this.object.getLockerKey()) {
 					if (!this.unlocked) {
 						this.unlocked = true;
 						this.object.addLockFactor(-this.lockFactor);
@@ -58,9 +64,14 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 			return this.updownLock.upgrade();
 		}
 		
-		if (this.lockFactor < 0) {
+		if (this.lockFactor == 2) {			
+			ReadWriteLock<T> replaceLock = new ReadWriteLock<>();
+			replaceLock.initUpdownLock(this.object, 1);
 			this.unlock();
-			return this.updownLock = new ReadWriteLock<T>(this.object, Math.abs(this.lockFactor));
+			while (this.object.getLockFactor() > 1) {
+				Thread.yield();
+			}
+			return this.updownLock = replaceLock;
 		} else {
 			return this;
 		}
@@ -72,9 +83,11 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 			return this.updownLock.downgrade();
 		}
 		
-		if (this.lockFactor > 0) {
+		if (this.lockFactor == 1) {			
+			ReadWriteLock<T> replaceLock = new ReadWriteLock<>();
+			replaceLock.initUpdownLock(this.object, 2);
 			this.unlock();
-			return this.updownLock = new ReadWriteLock<T>(this.object, -this.lockFactor);
+			return this.updownLock = replaceLock;
 		} else {
 			return this;
 		}
@@ -94,7 +107,7 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 
 		void addLockFactor(int lockfactor);
 
-		Object getKeyLocker();
+		Object getLockerKey();
 	}
 
 	/**
@@ -102,7 +115,7 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 	 */
 	public static class ReadLock<T extends ReadWriteLock.ReadWriteLockableObject> extends ReadWriteLock<T> {
 		public ReadLock(T obj) {
-			super(obj, -1);
+			this.initLock(obj, 2);
 		}
 	}
 
@@ -111,7 +124,7 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 	 */
 	public static class WriteLock<T extends ReadWriteLock.ReadWriteLockableObject> extends ReadWriteLock<T> {
 		public WriteLock(T obj) {
-			super(obj, 1);
+			this.initLock(obj, 1);
 		}
 	}
 }

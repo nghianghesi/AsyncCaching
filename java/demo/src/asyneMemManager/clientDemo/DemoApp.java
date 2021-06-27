@@ -50,7 +50,8 @@ public class DemoApp {
 					// TODO Auto-generated catch block
 					ex.printStackTrace();
 				}
-			}, executor);			
+			}, executor);
+			tasks.add(t);
 			
 			tasks.add(
 				t.thenRunAsync(()->{					
@@ -112,7 +113,7 @@ public class DemoApp {
 		
 		System.out.println("All tasks queued");
 		CompletableFuture.allOf(tasks.toArray(new CompletableFuture<?>[0])).join();
-		System.out.print("All tasks completed");
+		System.out.println("All tasks completed");
 		System.out.println(memManager.debugInfo());
 		executor.shutdown();
 		
