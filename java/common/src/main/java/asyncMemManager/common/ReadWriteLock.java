@@ -43,16 +43,22 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 				|| (lockFactor == 1 && this.object.getLockFactor() == 0));
 	}
 	
+	private void unlockWhenSynced() {
+		if (updownLock != null) {
+			this.updownLock.unlockWhenSynced();
+		}else if (!this.unlocked) {
+			this.unlocked = true;
+			this.object.addLockFactor(-this.lockFactor);
+		}		
+	}
+	
 	public void unlock() {
 		if (updownLock != null) {
 			this.updownLock.unlock();
 		} else {
 			if (!this.unlocked) {
 				synchronized (this.object.getLockerKey()) {
-					if (!this.unlocked) {
-						this.unlocked = true;
-						this.object.addLockFactor(-this.lockFactor);
-					}
+					this.unlockWhenSynced();
 				}
 			}
 		}
@@ -64,14 +70,27 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 			return this.updownLock.upgrade();
 		}
 		
-		if (this.lockFactor == 2) {			
+		if (this.lockFactor == 2) {	
 			ReadWriteLock<T> replaceLock = new ReadWriteLock<>();
-			replaceLock.initUpdownLock(this.object, 1);
-			this.unlock();
+			boolean upgraded = false;
+			while (!upgraded) {
+				synchronized (this.object.getLockerKey()) {
+					if ((this.object.getLockFactor() & 1) == 0) {
+						replaceLock.initUpdownLock(this.object, 1);
+						this.unlockWhenSynced();
+						upgraded = true;						
+					}else {
+						this.unlockWhenSynced();
+					}
+				}
+				Thread.yield();
+			}
+
 			while (this.object.getLockFactor() > 1) {
 				Thread.yield();
 			}
-			return this.updownLock = replaceLock;
+			
+			return this.updownLock = replaceLock;			
 		} else {
 			return this;
 		}

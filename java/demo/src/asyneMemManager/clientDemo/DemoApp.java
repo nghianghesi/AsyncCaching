@@ -24,7 +24,7 @@ public class DemoApp {
 		int capacity = 400 * TestEntity.LARGE_PROPERTY_SIZE;
 		int initialSize = 20;
 		int cleanupInterval = 3600;
-		int candlePoolSize = 4;
+		int candlePoolSize = 10;
 		Map<String, asyncMemManager.common.FlowKeyConfiguration> flowKeyConfig = new HashMap<>();
 		asyncMemManager.common.Configuration config = new asyncMemManager.common.Configuration(capacity, initialSize, cleanupInterval, candlePoolSize, flowKeyConfig);
 				
