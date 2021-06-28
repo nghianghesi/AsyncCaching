@@ -15,8 +15,6 @@ import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-import javax.management.QueryEval;
-
 import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
 import asyncMemManager.common.di.IndexableQueuedObject;
@@ -67,13 +65,14 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 		CacheData cachedObj = new CacheData(key, data, hottime);
 		
 		CacheData newData = this.keyToObjectMap.putIfAbsent(cachedObj.key, cachedObj);
-		if (newData != cachedObj) // already added by other thread
+		if (newData != null) // already added by other thread
 		{
 			return;
 		}
+		
 		this.usedSize.addAndGet(data.length());
 		
-		this.queueManageAction(newData, () ->
+		this.queueManageAction(cachedObj, () ->
 		{
 			// get a candle for container.
 			ManagedObjectQueue<CacheData> candle = this.pollCandle();
@@ -96,17 +95,17 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	private void queueManageAction(CacheData managedObj, Runnable action)	
 	{
 		synchronized (managedObj) { // to ensure only one manage action executing for this managedObj
-			managedObj.manageAction = managedObj.manageAction.thenRunAsync(action);
+			managedObj.manageAction = managedObj.manageAction.thenRunAsync(action, this.manageExecutor);
 		}
 	}	
 	
 	public String retrieve(UUID key) 
 	{
 		CacheData cachedObj = this.keyToObjectMap.remove(key);
-		
+		String res = null;
 		if (cachedObj != null)
 		{
-			String res = cachedObj.data;
+			res = cachedObj.data;
 			if (res == null)
 			{
 				res = this.persistence.retrieve(cachedObj.key);					
@@ -129,7 +128,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 			}
 		}
 		
-		return null;
+		return res;
 	}
 	
 	public long size() {
