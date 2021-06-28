@@ -1,7 +1,7 @@
 package asyncMemManager.common;
 
-import java.util.Arrays;
 import java.util.Comparator;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import asyncMemManager.common.di.IndexableQueuedObject;
 
@@ -10,24 +10,29 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
 	private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
 	private static final int MAX_POLL_CANDIDATE_CHECK_RANGE = 5;
 	
-	Object[] queue;
-    private int size = 0;
+	volatile AtomicReferenceArray<T> queue;
+    private volatile int size = 0;
     private final Comparator<T> comparator;
     
     public ManagedObjectQueue(int initSize, Comparator<T> comparator) {
-        this.queue = new Object[initSize];
+        this.queue = new AtomicReferenceArray<>(initSize);
         this.comparator = comparator;
     }
     
     private void grow(int minCapacity) {
-        int oldCapacity = queue.length;
+        int oldCapacity = queue.length();
         // Double size if small; else grow by 50%
         int newCapacity = oldCapacity
                 + ((oldCapacity < 64) ? (oldCapacity + 2) : (oldCapacity >> 1));
         // overflow-conscious code
         if (newCapacity - MAX_ARRAY_SIZE > 0)
             newCapacity = hugeCapacity(minCapacity);
-        queue = Arrays.copyOf(queue, newCapacity);
+        
+        AtomicReferenceArray<T> newqueue = new AtomicReferenceArray<>(newCapacity);
+        for(int i=0; i<queue.length(); i++) {
+        	newqueue.set(i, queue.get(i));
+        }
+        queue = newqueue;
     }
     
     private static int hugeCapacity(int minCapacity) {
@@ -36,13 +41,13 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
         return (minCapacity > MAX_ARRAY_SIZE) ? Integer.MAX_VALUE : MAX_ARRAY_SIZE;
     }
     
-    @SuppressWarnings("unchecked")
 	public T getPollCandidate() {
     	// size expected much higher than MAX_POLL_CANDIDATE_CHECK_RANGE, so there should be thread-safe index out of range issue
-        for (int i=0; i<MAX_POLL_CANDIDATE_CHECK_RANGE && i<this.size; i++)
+        for (int i=0; i<MAX_POLL_CANDIDATE_CHECK_RANGE && i < this.size; i++)
         {
-        	if (((T)this.queue[i]).isPeekable()) {
-        		return (T)this.queue[i];
+        	T o = this.queue.get(i);
+        	if (o != null && o.isPeekable()) {
+        		return o;
         	}
         }
         return null;
@@ -52,82 +57,89 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
         if (e == null)
             throw new NullPointerException();
         int i = size;
-        if (i >= queue.length)
+        if (i >= queue.length())
             grow(i + 1);
         size = i + 1;
-        if (i == 0)
-            queue[0] = e;
+        if (i == 0) {
+            queue.set(0, e);
+            e.setIndexInQueue(0);
+        }
         else
         	siftUpUsingComparator(i, e);
         return true;
     }	    
 
-	@SuppressWarnings("unchecked")
 	public T removeAt(int i) {
         // assert i >= 0 && i < size;
-        int s = --size;
-        if (s == i) 
+		if (i >= size)
+		{
+			return null;
+		}
+		
+        int s = --size;        
+
+        if (s == i)         
         {// removed last element
-        	((T)queue[i]).setIndexInQueue(-1);
-            queue[i] = null;
+        	T removed = queue.getAndSet(i, null);
+        	removed.setIndexInQueue(-1);
+        	return removed;
         }
-        else {
-        	T moved = (T)queue[s];
-            queue[s] = null;
+        else {        	
+        	T removed = queue.get(i);
+        	T moved = queue.getAndSet(s, null);
+        	
             siftDownUsingComparator(i, moved);
-            if (queue[i] == moved) {
+            if (queue.get(i) == moved) {
             	siftUpUsingComparator(i, moved);
-                if (queue[i] != moved) 
-                {
-                	 moved.setIndexInQueue(-1);
-                    return moved;
-                }
             }
+            
+            removed.setIndexInQueue(-1);
+        	return removed;
         }
-        
-        return null;
     }
 	
-	@SuppressWarnings("unchecked")
 	public void syncPriorityAt(int i) {
-		T moved = (T)queue[i];
+		T moved = queue.get(i);
         siftDownUsingComparator(i, moved);
-        if (queue[i] == moved) {
+        if (queue.get(i) == moved) {
         	siftUpUsingComparator(i, moved);
         }
 	}
+	
+	public T getAt(int i)
+	{
+		return this.queue.get(i);
+	}
     
-    @SuppressWarnings("unchecked")
 	private void siftUpUsingComparator(int k, T x) {
         while (k > 0) {
             int parent = (k - 1) >>> 1;
-            T e = (T)queue[parent];
+            T e = queue.get(parent);
             if (comparator.compare(x, e) >= 0)
                 break;
-            queue[k] = e;
+            queue.set(k, e);
             e.setIndexInQueue(k);
             k = parent;
         }
-        queue[k] = x;
+        queue.set(k, x);
         x.setIndexInQueue(k);
     }    
     
-    @SuppressWarnings("unchecked")
 	private void siftDownUsingComparator(int k, T x) {
         int half = size >>> 1;
         while (k < half) {
             int child = (k << 1) + 1;
-            T c = (T)queue[child];
+            T c = queue.get(child);
             int right = child + 1;
-            if (right < size && comparator.compare(c, (T)queue[right]) > 0)
-                c = (T)queue[child = right];
+            if (right < size && comparator.compare(c, queue.get(right)) > 0)
+                c = queue.get(child = right);
             if (comparator.compare(x, c) <= 0)
                 break;
-            queue[k] = c;
+            queue.set(k, c);
             c.setIndexInQueue(k);
             k = child;
         }
-        queue[k] = x;
+        queue.set(k, x);
         x.setIndexInQueue(k);
     }
     

@@ -6,3 +6,11 @@
 - multiple waiting time stats.
 - thread to cleanup timeout elements.
 - calculate hottime.
+
+
+*****************
+reports:
+design. 
+avg time (analys --> no store/retrieve)
+volatile (manage object/ atomic queue)
+ 

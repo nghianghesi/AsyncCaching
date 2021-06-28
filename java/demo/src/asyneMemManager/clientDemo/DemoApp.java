@@ -19,17 +19,17 @@ import asyneMemManager.clientDemo.model.TestEntity;
 public class DemoApp {
 
 	public static void main(String[] args) {
-		ExecutorService executor = Executors.newFixedThreadPool(20);		
+		ExecutorService executor = Executors.newFixedThreadPool(10);		
 
-		int capacity = 20 * TestEntity.LARGE_PROPERTY_SIZE;
+		int capacity = 400 * TestEntity.LARGE_PROPERTY_SIZE;
 		int initialSize = 20;
 		int cleanupInterval = 3600;
-		int candlePoolSize = 4;
+		int candlePoolSize = 10;
 		Map<String, asyncMemManager.common.FlowKeyConfiguration> flowKeyConfig = new HashMap<>();
 		asyncMemManager.common.Configuration config = new asyncMemManager.common.Configuration(capacity, initialSize, cleanupInterval, candlePoolSize, flowKeyConfig);
 				
 		Persistence memCachePersistence = new MemCacheServerPersistence("http://localhost:8080/");
-		HotTimeCalculator hotTimeCalculator = new AvgWaitTimeCalculator(1500);
+		HotTimeCalculator hotTimeCalculator = new AvgWaitTimeCalculator(500);
 		AsyncMemManager memManager = new asyncCache.client.AsyncMemManager(config, hotTimeCalculator, memCachePersistence);
 		
 		// TODO Auto-generated method stub
@@ -43,14 +43,15 @@ public class DemoApp {
 			final int idx = i;
 			
 			CompletableFuture<Void> t = CompletableFuture.runAsync(()->{
-				System.out.println("First Async "+ idx + " " + e12.supply((o)->o.getSomeText()));
+				System.out.println("1st Async "+ idx + " " + e12.supply((o)->o.getSomeText()));
 				try {
-					Thread.sleep(500 + new Random().nextInt(500));
+					Thread.sleep(50 + new Random().nextInt(50));
 				} catch (InterruptedException ex) {
 					// TODO Auto-generated catch block
 					ex.printStackTrace();
 				}
 			}, executor);
+			tasks.add(t);
 			
 			tasks.add(
 				t.thenRunAsync(()->{					
@@ -62,11 +63,13 @@ public class DemoApp {
 					}
 					
 					e12.apply((o) ->{
-						System.out.println("2nd Async "+ idx + o.getSomeText());
+						System.out.println("2nd Async "+ idx +" "+ o.getSomeText());
 					});
 					
+					System.out.println(memManager.debugInfo());
+					
 					try {
-						Thread.sleep(1000 + new Random().nextInt(500));
+						Thread.sleep(100 + new Random().nextInt(50));
 					} catch (InterruptedException ex) {
 						// TODO Auto-generated catch block
 						ex.printStackTrace();
@@ -81,9 +84,12 @@ public class DemoApp {
 						ex.printStackTrace();
 					}
 					
-					System.out.println("3rd Async "+ idx + e3.supply((o)->o.getSomeText()));
+					System.out.println("3rd Async "+ idx +" "+ e3.supply((o)->o.getSomeText()));
+					
+					System.out.println(memManager.debugInfo());
+					
 					try {
-						Thread.sleep(1500 + new Random().nextInt(500));
+						Thread.sleep(150 + new Random().nextInt(50));
 					} catch (InterruptedException ex) {
 						// TODO Auto-generated catch block
 						ex.printStackTrace();
@@ -98,7 +104,7 @@ public class DemoApp {
 			}
 			
 			try {
-				Thread.sleep(10 + new Random().nextInt(100));
+				Thread.sleep(2 + new Random().nextInt(10));
 			} catch (InterruptedException ex) {
 				// TODO Auto-generated catch block
 				ex.printStackTrace();
@@ -107,7 +113,8 @@ public class DemoApp {
 		
 		System.out.println("All tasks queued");
 		CompletableFuture.allOf(tasks.toArray(new CompletableFuture<?>[0])).join();
-		System.out.print("All tasks completed");
+		System.out.println("All tasks completed");
+		System.out.println(memManager.debugInfo());
 		executor.shutdown();
 		
 		try {
