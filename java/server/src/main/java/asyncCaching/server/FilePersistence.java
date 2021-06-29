@@ -5,7 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.UUID;
-import asyncMemManager.common.di.Persistence;
+
+import asyncCaching.server.di.Persistence;
 
 public class FilePersistence implements Persistence {
 
@@ -15,7 +16,7 @@ public class FilePersistence implements Persistence {
 	}
 	
 	@Override
-	public void store(UUID key, String data, long expectedDuration) {
+	public void store(UUID key, String data) {
 	    Path path = Paths.get(this.baseFolder + key);
 	    byte[] strToBytes = data.getBytes();
 	    try {

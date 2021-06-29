@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Bean;
 
 import asyncCaching.server.FilePersistence;
 import asyncCaching.server.di.AsyncMemCache;
-import asyncMemManager.common.di.Persistence;
+import asyncCaching.server.di.Persistence;
 
 @SpringBootApplication()
 public class AsyncMemCacheApp {

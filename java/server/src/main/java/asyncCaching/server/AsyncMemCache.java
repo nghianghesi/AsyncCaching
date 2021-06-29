@@ -15,13 +15,14 @@ import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import asyncCaching.server.di.Persistence;
 import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
 import asyncMemManager.common.di.IndexableQueuedObject;
 
 public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {	
 	private Configuration config;
-	private asyncMemManager.common.di.Persistence persistence;
+	private Persistence persistence;
 	private BlockingQueue<ManagedObjectQueue<CacheData>> candlesPool;
 	private List<ManagedObjectQueue<CacheData>> candlesSrc;
 	private ConcurrentHashMap<UUID, CacheData> keyToObjectMap;
@@ -31,8 +32,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	//single threads to avoid collision, also, give priority to other flows
 	private ExecutorService manageExecutor;
 	
-	public AsyncMemCache(Configuration config,
-			asyncMemManager.common.di.Persistence persistence) 
+	public AsyncMemCache(Configuration config, Persistence persistence) 
 	{
 		this.config = config;
 		this.persistence = persistence;
@@ -192,8 +192,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 						coldestNode.containerCandle = null;	
 					
 						// coldestNode was removed from candles so, never duplicate persistence.
-						long expectedDuration = LocalTime.now().until(coldestNode.hotTime, ChronoField.MILLI_OF_SECOND.getBaseUnit());
-						this.persistence.store(coldestNode.key, coldestNode.data, expectedDuration);
+						this.persistence.store(coldestNode.key, coldestNode.data);
 						this.usedSize.addAndGet(-coldestNode.data.length());
 						coldestNode.data = null;						
 					}
