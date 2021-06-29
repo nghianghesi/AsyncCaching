@@ -1,5 +1,6 @@
 package asyneMemManager.clientDemo;
 
+import java.io.InvalidObjectException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -16,17 +17,22 @@ public class DemoErrorApp {
 		
 		// TODO Auto-generated method stub
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();
-		int n = 800;
+		int n = 2000;
 		for (int i=0; i<n; i++)
 		{						
-			System.out.print("Queuing "+i);
+			System.out.print("Queuing "+ i +" ");
 			final TestEntity e = TestEntity.initLargeObject();
 			final int idx = i;
 			
 			CompletableFuture<Void> t=CompletableFuture.runAsync(()->{
-				System.out.println("First Async "+ idx + e.getSomeText());
 				try {
-					Thread.sleep(500 + new Random().nextInt(500));
+					System.out.println("1st Async "+ idx + e.getSomeText());
+				} catch (InvalidObjectException e2) {
+					// TODO Auto-generated catch block
+					e2.printStackTrace();
+				}
+				try {
+					Thread.sleep(50 + new Random().nextInt(50));
 				} catch (InterruptedException e1) {
 					// TODO Auto-generated catch block
 					e1.printStackTrace();
@@ -34,9 +40,14 @@ public class DemoErrorApp {
 			}, executor); 
 			tasks.add(
 				t.thenRunAsync(()->{
-					System.out.println("2nd Async "+ idx + e.getSomeText()); 
 					try {
-						Thread.sleep(1000 + new Random().nextInt(500));
+						System.out.println("2nd Async "+ idx + e.getSomeText());
+					} catch (InvalidObjectException e2) {
+						// TODO Auto-generated catch block
+						e2.printStackTrace();
+					} 
+					try {
+						Thread.sleep(100 + new Random().nextInt(50));
 					} catch (InterruptedException e1) {
 						// TODO Auto-generated catch block
 						e1.printStackTrace();
@@ -44,9 +55,15 @@ public class DemoErrorApp {
 				}, executor));
 			tasks.add(
 				t.thenRunAsync(()->{
-					System.out.println("3rd Async "+ idx + e.getSomeText());
 					try {
-						Thread.sleep(1500 + new Random().nextInt(500));
+						System.out.println("3rd Async "+ idx + e.getSomeText());
+					} catch (InvalidObjectException e2) {
+						// TODO Auto-generated catch block
+						e2.printStackTrace();
+					}
+					
+					try {
+						Thread.sleep(150 + new Random().nextInt(50));
 					} catch (InterruptedException e1) {
 						// TODO Auto-generated catch block
 						e1.printStackTrace();
@@ -55,7 +72,7 @@ public class DemoErrorApp {
 
 			
 			try {
-				Thread.sleep(10 + new Random().nextInt(100));
+				Thread.sleep(2 + new Random().nextInt(10));
 			} catch (InterruptedException ex) {
 				// TODO Auto-generated catch block
 				ex.printStackTrace();

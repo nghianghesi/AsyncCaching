@@ -13,4 +13,5 @@ reports:
 design. 
 avg time (analys --> no store/retrieve)
 volatile (manage object/ atomic queue)
+async on serverside to fix IO issue.
  

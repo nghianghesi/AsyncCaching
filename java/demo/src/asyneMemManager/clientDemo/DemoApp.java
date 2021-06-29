@@ -1,5 +1,6 @@
 package asyneMemManager.clientDemo;
 
+import java.io.InvalidObjectException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,7 +33,7 @@ public class DemoApp {
 		
 		// TODO Auto-generated method stub
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();
-		int n = 2000;
+		int n = 10000;
 		for (int i=0; i<n; i++)
 		{			
 			final AsyncMemManager.SetupObject<TestEntity> setupEntity = memManager.manage("DemoFlow", TestEntity.initLargeObject(), TestEntity.TestEntityAsyncMemSerializer.Instance);
@@ -41,7 +42,15 @@ public class DemoApp {
 			final int idx = i;
 			
 			CompletableFuture<Void> t = CompletableFuture.runAsync(()->{
-				System.out.println("1st Async "+ idx + " " + e12.supply((o)->o.getSomeText()));
+				System.out.println("1st Async "+ idx + " " + e12.supply((o)->{
+					try {
+						return o.getSomeText();
+					} catch (InvalidObjectException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					return null;
+				}));
 				try {
 					Thread.sleep(50 + new Random().nextInt(50));
 				} catch (InterruptedException ex) {
@@ -61,7 +70,12 @@ public class DemoApp {
 					}
 					
 					e12.apply((o) ->{
-						System.out.println("2nd Async "+ idx +" "+ o.getSomeText());
+						try {
+							System.out.println("2nd Async "+ idx +" "+ o.getSomeText());
+						} catch (InvalidObjectException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
 					});
 					
 					System.out.println(memManager.debugInfo());
@@ -82,7 +96,15 @@ public class DemoApp {
 						ex.printStackTrace();
 					}
 					
-					System.out.println("3rd Async "+ idx +" "+ e3.supply((o)->o.getSomeText()));
+					System.out.println("3rd Async "+ idx +" "+ e3.supply((o)->{
+						try {
+							return o.getSomeText();
+						} catch (InvalidObjectException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+						return null;
+					}));
 					
 					System.out.println(memManager.debugInfo());
 					

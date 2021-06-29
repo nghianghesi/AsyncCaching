@@ -12,6 +12,7 @@ import retrofit2.Call;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 import retrofit2.http.Body;
+import retrofit2.http.DELETE;
 import retrofit2.http.GET;
 import retrofit2.http.POST;
 import retrofit2.http.Path;
@@ -69,13 +70,13 @@ public class MemCacheServerPersistence implements Persistence{
 	
 	private static interface AsyncCachingREST
 	{
-		@POST("/cache/store/{key}/{expectedDuration}")
+		@POST("/cache/{key}/{expectedDuration}")
 		public Call<Void> store(@Path("key")UUID key, @Body String data, @Path("expectedDuration") long expectedDuration) ;
 
-		@GET("/cache/retrieve/{key}")
+		@GET("/cache/{key}")
 		public Call<String> retrieve(@Path("key") UUID key);
 
-		@GET("/cache/remove/{key}")
+		@DELETE("/cache/{key}")
 		public Call<Void> remove(@Path("key") UUID key);
 	}
 
