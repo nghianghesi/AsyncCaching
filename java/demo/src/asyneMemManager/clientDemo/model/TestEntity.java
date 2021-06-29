@@ -1,5 +1,6 @@
 package asyneMemManager.clientDemo.model;
 
+import java.io.InvalidObjectException;
 import java.util.Random;
 
 import asyncMemManager.client.di.AsyncMemSerializer;
@@ -17,8 +18,13 @@ public class TestEntity {
 		return e;
 	}
 	
-	public String getSomeText() {
-		return this.stringProperty + this.largeProperty[0];
+	public String getSomeText() throws InvalidObjectException {
+		if (stringProperty.isBlank() || this.largeProperty[0] == 0)
+		{
+			throw new InvalidObjectException("Invalid Object State");
+		}
+		
+		return this.stringProperty + " " + this.largeProperty[0];
 	}
 	
 	public static class TestEntityAsyncMemSerializer implements AsyncMemSerializer<TestEntity>

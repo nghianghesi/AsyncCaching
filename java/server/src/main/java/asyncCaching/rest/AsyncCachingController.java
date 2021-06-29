@@ -20,19 +20,19 @@ public class AsyncCachingController {
 	@Autowired
 	AsyncMemCache asyncMemCache;
 	
-	@RequestMapping(method = RequestMethod.POST, value = "/cache/store/{key}/{expectedDuration}")
+	@RequestMapping(method = RequestMethod.POST, value = "/cache/{key}/{expectedDuration}")
 	public void store(@PathVariable UUID key, @PathVariable long expectedDuration, @RequestBody String data) throws Exception {
 		this.logger.info("Store {}", key);  
 		this.asyncMemCache.cache(key, data, expectedDuration);
 	}
 	
-	@RequestMapping(method = RequestMethod.GET, value = "/cache/retrieve/{key}")
+	@RequestMapping(method = RequestMethod.GET, value = "/cache/{key}")
 	public Future<String> retrieve(@PathVariable UUID key) throws Exception {
 		this.logger.info("Retrieve {}", key);
 	    return this.asyncMemCache.retrieve(key);
 	}	
 	
-	@RequestMapping(method = RequestMethod.GET, value = "/cache/remove/{key}")
+	@RequestMapping(method = RequestMethod.DELETE, value = "/cache/{key}")
 	public void remove(@PathVariable UUID key) throws Exception {
 		this.logger.info("Remove {}", key);
 	    this.asyncMemCache.retrieve(key);
