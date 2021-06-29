@@ -2,7 +2,7 @@ package asyneMemManager.clientDemo.model;
 
 import java.util.Random;
 
-import asyncMemManager.common.di.AsyncMemSerializer;
+import asyncMemManager.client.di.AsyncMemSerializer;
 
 public class TestEntity {
 	private String stringProperty;

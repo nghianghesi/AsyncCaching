@@ -1,4 +1,4 @@
-package asyncMemManager.common.di;
+package asyncMemManager.client.di;
 
 import asyncMemManager.common.Configuration;
 

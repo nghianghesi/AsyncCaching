@@ -1,4 +1,4 @@
-package asyncCache.client;
+package asyncMemManager.client;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -11,22 +11,23 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import asyncMemManager.client.di.*;
 import asyncMemManager.common.Configuration;
 import asyncMemManager.common.ManagedObjectQueue;
 import asyncMemManager.common.ReadWriteLock;
 import asyncMemManager.common.ReadWriteLock.ReadWriteLockableObject;
-import asyncMemManager.common.di.AsyncMemSerializer;
 import asyncMemManager.common.di.IndexableQueuedObject;
 
-public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, AutoCloseable {
+
+public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManager, AutoCloseable {
 	
 	// this is for special marker only.
 	private static final ManagedObjectQueue<ManagedObjectBase> queuedForManageCandle = new ManagedObjectQueue<>(0, null);
 	private static final ManagedObjectQueue<ManagedObjectBase> obsoletedManageCandle = new ManagedObjectQueue<>(0, null);
 	
 	private Configuration config;
-	private asyncMemManager.common.di.HotTimeCalculator hotTimeCalculator;
-	private asyncMemManager.common.di.Persistence persistence;
+	private HotTimeCalculator hotTimeCalculator;
+	private Persistence persistence;
 	private BlockingQueue<ManagedObjectQueue<ManagedObjectBase>> candlesPool;	
 	private List<ManagedObjectQueue<ManagedObjectBase>> candlesSrc;
 	private AtomicLong usedSize = new AtomicLong(0);
@@ -41,8 +42,8 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	 * @param persistence
 	 */
 	public AsyncMemManager(Configuration config,
-								asyncMemManager.common.di.HotTimeCalculator coldTimeCalculator, 
-								asyncMemManager.common.di.Persistence persistence) 
+								HotTimeCalculator coldTimeCalculator, 
+								Persistence persistence) 
 	{
 		this.config = config;
 		this.hotTimeCalculator = coldTimeCalculator;
@@ -74,7 +75,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	 * @return key for retrieve object from cache.
 	 */
 	@Override
-	public <T> asyncCache.client.di.AsyncMemManager.SetupObject<T> manage(String flowKey, T object, AsyncMemSerializer<T> serializer) 
+	public <T> asyncMemManager.client.di.AsyncMemManager.SetupObject<T> manage(String flowKey, T object, AsyncMemSerializer<T> serializer) 
 	{
 		// init key, mapKey, newnode
 		if (object == null)
@@ -528,7 +529,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	/**
 	 * Object for async flow {@link ManagedObjectBase#asyncCounter}
 	 */
-	public class AsyncObject<T> implements asyncCache.client.di.AsyncMemManager.AsyncObject<T>
+	public class AsyncObject<T> implements asyncMemManager.client.di.AsyncMemManager.AsyncObject<T>
 	{
 		final ManagedObject<T> managedObject;
 		AsyncObject(ManagedObject<T> managedObject) {
@@ -595,7 +596,7 @@ public class AsyncMemManager implements asyncCache.client.di.AsyncMemManager, Au
 	/**
 	 * Object for setup flow {@link ManagedObjectBase#beingSetup}
 	 */	
-	public class SetupObject<T> implements asyncCache.client.di.AsyncMemManager.SetupObject<T>
+	public class SetupObject<T> implements asyncMemManager.client.di.AsyncMemManager.SetupObject<T>
 	{
 		final ManagedObject<T> managedObject;
 		SetupObject(ManagedObject<T> managedObject) {

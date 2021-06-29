@@ -1,9 +1,7 @@
-package asyncCache.client.di;
+package asyncMemManager.client.di;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
-
-import asyncMemManager.common.di.AsyncMemSerializer;
 
 public interface AsyncMemManager extends AutoCloseable{
 	public <T> SetupObject<T> manage(String flowKey, T object, AsyncMemSerializer<T> serializer);

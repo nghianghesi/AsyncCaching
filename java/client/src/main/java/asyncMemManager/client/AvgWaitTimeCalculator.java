@@ -1,9 +1,10 @@
-package asyncMemManager.common;
+package asyncMemManager.client;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import asyncMemManager.common.di.HotTimeCalculator;
+import asyncMemManager.client.di.*;
+import asyncMemManager.common.Configuration;
 
 public class AvgWaitTimeCalculator implements HotTimeCalculator{
 	

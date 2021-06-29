@@ -1,10 +1,11 @@
-package asyncCache.client;
+package asyncMemManager.client;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
-import asyncMemManager.common.di.AsyncMemSerializer;
+import asyncMemManager.client.di.AsyncMemSerializer;
+
 
 class SerializerBase {
 	

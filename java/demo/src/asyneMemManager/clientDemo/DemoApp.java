@@ -9,11 +9,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import asyncCache.client.MemCacheServerPersistence;
-import asyncCache.client.di.AsyncMemManager;
-import asyncMemManager.common.AvgWaitTimeCalculator;
-import asyncMemManager.common.di.HotTimeCalculator;
-import asyncMemManager.common.di.Persistence;
+import asyncMemManager.client.AvgWaitTimeCalculator;
+import asyncMemManager.client.MemCacheServerPersistence;
+import asyncMemManager.client.di.*;
 import asyneMemManager.clientDemo.model.TestEntity;
 
 public class DemoApp {
@@ -30,7 +28,7 @@ public class DemoApp {
 				
 		Persistence memCachePersistence = new MemCacheServerPersistence("http://localhost:8080/");
 		HotTimeCalculator hotTimeCalculator = new AvgWaitTimeCalculator(500);
-		AsyncMemManager memManager = new asyncCache.client.AsyncMemManager(config, hotTimeCalculator, memCachePersistence);
+		AsyncMemManager memManager = new asyncMemManager.client.AsyncMemManager(config, hotTimeCalculator, memCachePersistence);
 		
 		// TODO Auto-generated method stub
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();

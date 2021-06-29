@@ -1,4 +1,4 @@
-package asyncMemManager.common.di;
+package asyncMemManager.client.di;
 
 public interface AsyncMemSerializer<T> {
 	public String serialize(T object);

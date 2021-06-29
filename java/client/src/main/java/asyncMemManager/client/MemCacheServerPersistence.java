@@ -1,11 +1,11 @@
-package asyncCache.client;
+package asyncMemManager.client;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import asyncMemManager.common.di.Persistence;
+import asyncMemManager.client.di.Persistence;
 import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import retrofit2.Call;
