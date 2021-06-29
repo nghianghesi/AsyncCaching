@@ -1,6 +1,7 @@
 package asyncCaching.rest;
 
 import java.util.UUID;
+import java.util.concurrent.Future;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +27,7 @@ public class AsyncCachingController {
 	}
 	
 	@RequestMapping(method = RequestMethod.GET, value = "/cache/retrieve/{key}")
-	public String retrieve(@PathVariable UUID key) throws Exception {
+	public Future<String> retrieve(@PathVariable UUID key) throws Exception {
 		this.logger.info("Retrieve {}", key);
 	    return this.asyncMemCache.retrieve(key);
 	}	
