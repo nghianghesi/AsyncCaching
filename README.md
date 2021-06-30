@@ -1,5 +1,5 @@
 # AsyncMemManager
-An design for memory management which auto caching "cold" items, auto restore when item requested to save memory in async programing.
+A design for memory management which auto caching "cold" items to save memory, auto restore when item requested in async programing.
 
 # Given
 Async programming is key paradism in microservices, however nothing fit for all, and Async aslo have multi drawbacks, one of them is overflow memory. For example, in a very popular code template like this.
