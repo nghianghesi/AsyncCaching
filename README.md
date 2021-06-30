@@ -21,11 +21,11 @@ There couple of patterns to solve this issue, like throttling to limit number of
 AsyncMemManager is a POC design of other way to solve this problem by manage those objects. The idea is wrapping those objects into containers and auto persist those objects lately referenced to save memory. When objects are looked up, AsyncMemManager auto restore them from storage if required.
 
 # Then
-Event with small memory capacity, almost un-limit number of task can be queued, and Async can be as is, no need complex design for throttling, re-cycle ...
+Even with just small memory capacity, almost un-limit number of tasks can be queued, and Async can be as is, no need complex design for throttling, re-circle tasks ...
 
 # Demo
 the POC include of 
-- DemoErrorApp, this demo for very common Async code, which 2000 task would quickly got Memeory overflow exception when run with -Xmx64m (assume memory is limitted)
+- DemoErrorApp, this is demo for very common Async code, which 2000 task would quickly got Memeory overflow exception when run with -Xmx64m (assume memory is limitted)
 - asyncMemManager.server, this is Spring boot based async memCache server, it's not like others memCach like Rdis or memcached.org. It's specifically designed for AsyncMemManager which
     + Auto remove object after single retrieving 
     + No sharing loading between clients
