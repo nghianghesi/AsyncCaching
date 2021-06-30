@@ -23,10 +23,10 @@ Event with small memory capacity, almost un-limit number of task can be queued, 
 the POC include of 
 - DemoErrorApp, this demo for very common Async code, which 2000 task would quickly got Memeory overflow exception when run with -Xmx64m (assume memory is limitted)
 - asyncMemManager.server, this is Spring boot based async memCache server, it's not like others memCach like Rdis or memcached.org. It's specifically designed for AsyncMemManager which
- + Auto remove object after single retrieving 
- + No sharing loading between clients
- + Required specify expected TTL when storing
- + "Cold" data may be persisted to disk to save memory (similar to AsyncMemManager)
+    + Auto remove object after single retrieving 
+    + No sharing loading between clients
+    + Required specify expected TTL when storing
+    + "Cold" data may be persisted to disk to save memory (similar to AsyncMemManager)
 Note: To run asyncMemManager.server, we need folder to save data, which is currently hardcode as <USER_HOME>/async-caching
 - DemoApp, this is aync code using AsyncMemManager, even with -Xmx64m, 10K tasks can bequeued and run properly.
 
