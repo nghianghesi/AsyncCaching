@@ -4,12 +4,16 @@ An design for memory management which auto caching "cold" items, auto restore wh
 # Given
 Async programming is key paradism in microservices, however nothing fit for all, and Async aslo have multi drawbacks, one of them is overflow memory. For example, in a very popular code template like this.
 
+```java
+
 SomeClass obj = new SomeClass
 obj.doSomeSetup()
 CompletableFuture.runAsync(doSomeTimeConsumingJobs, executor)
                  .thenRunAsync(() -> {
                     obj.handleResult()
                  }); 
+```              
+              
 because obj is referred inside async task, so it's maintained in memory. If we queue big number of tasks like this, memory may be overflowed.
 There couple of patterns to solve this issue, like throttling to limit number of queued tasks (so system may idle for awhile to wait for previous tasks done). 
 
