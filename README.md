@@ -35,6 +35,7 @@ the POC include of
     + Note: To run asyncMemManager.server, we need folder to save data, which is currently hardcode as <USER_HOME>/async-caching
 - DemoApp, this is aync code using AsyncMemManager, even with -Xmx64m, 10K tasks can bequeued and run properly.
 
-# Detail Design (Comming soon)
-
+# Detail Design (Comming)
+     # Object diagram
+![AsyncMemManager](https://user-images.githubusercontent.com/46674635/123992309-2047e500-d991-11eb-9085-6da9d4f4742c.png)
    
