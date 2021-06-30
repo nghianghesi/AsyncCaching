@@ -27,7 +27,7 @@ the POC include of
     + No sharing loading between clients
     + Required specify expected TTL when storing
     + "Cold" data may be persisted to disk to save memory (similar to AsyncMemManager)
-Note: To run asyncMemManager.server, we need folder to save data, which is currently hardcode as <USER_HOME>/async-caching
+    + Note: To run asyncMemManager.server, we need folder to save data, which is currently hardcode as <USER_HOME>/async-caching
 - DemoApp, this is aync code using AsyncMemManager, even with -Xmx64m, 10K tasks can bequeued and run properly.
 
 # Detail Design (Comming soon)
