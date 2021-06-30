@@ -8,10 +8,10 @@ Async programming is key paradism in microservices, however nothing fit for all,
 
 SomeClass obj = new SomeClass
 obj.doSomeSetup()
-CompletableFuture.runAsync(doSomeTimeConsumingJobs, executor)
-                 .thenRunAsync(() -> {
+doSomeTimeConsumingJobs().thenRunAsync(() -> {
                     obj.handleResult()
                  }); 
+// doSomeTimeConsumingJobs could be complex calculating, other API calling, database reading ...
 ```              
               
 because obj is referred inside async task, so it's maintained in memory. If we queue big number of tasks like this, memory may be overflowed.
