@@ -44,3 +44,6 @@ the POC include of
 
 ![AsyncMemManagerSequence](https://user-images.githubusercontent.com/46674635/124054751-7a6b9900-d9d7-11eb-9f11-58f14df70c43.png)
 
+# Problems need to be solved
+  + Colisions in MemManager when multiple thread access, persisting to mem, reload objects.
+  + Efficient design to optimize accessing performance, so that lest affect to the AyncApp.
