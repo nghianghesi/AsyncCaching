@@ -37,8 +37,10 @@ the POC include of
 
 # Detail Design (Comming)
   + Object diagram
+  
 ![AsyncMemManager](https://user-images.githubusercontent.com/46674635/123992309-2047e500-d991-11eb-9085-6da9d4f4742c.png)
 
   + AsyncMemManagement sequence
-  ![AsyncMemManagerSequence](https://user-images.githubusercontent.com/46674635/124046257-5bb0d680-d9c6-11eb-94a7-87dbb773ef5a.jpg)
+
+![AsyncMemManagerSequence](https://user-images.githubusercontent.com/46674635/124046257-5bb0d680-d9c6-11eb-94a7-87dbb773ef5a.jpg)
 
