@@ -42,5 +42,5 @@ the POC include of
 
   + AsyncMemManagement sequence
 
-![AsyncMemManagerSequence](https://user-images.githubusercontent.com/46674635/124046257-5bb0d680-d9c6-11eb-94a7-87dbb773ef5a.jpg)
+![AsyncMemManagerSequence](https://user-images.githubusercontent.com/46674635/124054751-7a6b9900-d9d7-11eb-9f11-58f14df70c43.png)
 
