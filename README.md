@@ -15,7 +15,8 @@ doSomeTimeConsumingJobs().thenRunAsync(() -> {
 // which return a FutureCompletable (A promise in js, or a Task in .NET) ...
 ```              
               
-because obj is referred inside async task, so it's maintained in memory. If we queue big number of tasks like this, memory may be overflowed.
+because obj is referred inside async task, so it's maintained in memory. If we queue big number of tasks like this, memory may be overflowed. For ex: in DemoErrorApp, with **2000 tasks** being queued, it's quickly get Memory Overflow Exception
+
 There couple of patterns to solve this issue, like throttling to limit number of queued tasks (so system may idle for awhile to wait for previous tasks done). 
 
 # When
@@ -23,6 +24,7 @@ AsyncMemManager is a POC design of other way to solve this problem by manage tho
 
 # Then
 Even with just small memory capacity, almost un-limit number of tasks can be queued, and Async can be as is, no need complex design for throttling, re-circle tasks ...
+For ex: in DemoApp, **10000 tasks** queued by as-is Async-programing and run properly, stable, and fast as normal. 
 
 # Demo
 the POC include of 
@@ -36,7 +38,8 @@ the POC include of
 - DemoApp, this is aync code using AsyncMemManager, even with -Xmx64m, 10K tasks can bequeued and run properly.
 
 # Problems need to be solved
-  + Colisions in MemManager when multiple thread access, persisting to mem, reload objects.
+  + Colisions in MemManager when multiple threads access, remove, persisting to mem, reload ... objects.
+  + Colisions in AsyncCache when multiple requests access, remove, persisting to file, reload ... data.
   + Efficient design to optimize accessing performance, so that lest affect to the AyncApp.
 
 # Detail Design (Comming)
