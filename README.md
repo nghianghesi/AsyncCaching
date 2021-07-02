@@ -35,6 +35,10 @@ the POC include of
     + Note: To run asyncMemManager.server, we need folder to save data, which is currently hardcode as <USER_HOME>/async-caching
 - DemoApp, this is aync code using AsyncMemManager, even with -Xmx64m, 10K tasks can bequeued and run properly.
 
+# Problems need to be solved
+  + Colisions in MemManager when multiple thread access, persisting to mem, reload objects.
+  + Efficient design to optimize accessing performance, so that lest affect to the AyncApp.
+
 # Detail Design (Comming)
   + Object diagram
   
@@ -43,7 +47,6 @@ the POC include of
   + AsyncMemManagement sequence
 
 ![AsyncMemManagerSequence](https://user-images.githubusercontent.com/46674635/124054751-7a6b9900-d9d7-11eb-9f11-58f14df70c43.png)
+  + AsyncMemManagement internal sequence
 
-# Problems need to be solved
-  + Colisions in MemManager when multiple thread access, persisting to mem, reload objects.
-  + Efficient design to optimize accessing performance, so that lest affect to the AyncApp.
+![AsyncMemManagement internal Sequence](https://user-images.githubusercontent.com/46674635/124217093-7d848900-daac-11eb-9e6b-52ee39ada603.png)
