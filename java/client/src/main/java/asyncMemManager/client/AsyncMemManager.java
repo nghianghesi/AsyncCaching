@@ -83,7 +83,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 			return null;
 		}
 		
-		SerializerBase baseSerializer = SerializerBase.getSerializerBaseInstance(serializer);
+		SerializerGeneral baseSerializer = SerializerGeneral.getSerializerBaseInstance(serializer);
 		long estimatedSize = serializer.estimateObjectSize(object);
 		
 		ManagedObject<T> managedObj = new ManagedObject<>(flowKey, object,  estimatedSize, baseSerializer);
@@ -398,12 +398,12 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 		/**
 		 * the serializer to ser/des object for persistence.
 		 */
-		final SerializerBase serializer;
+		final SerializerGeneral serializer;
 
 		/**
 		 * init  ManagedObject 
 		 */
-		public ManagedObjectBase(String flowKey, long estimatedSize, SerializerBase serializer) {
+		public ManagedObjectBase(String flowKey, long estimatedSize, SerializerGeneral serializer) {
 			this.flowKey = flowKey;
 			this.key = UUID.randomUUID();
 			this.startTime = this.hotTime = LocalDateTime.now();
@@ -519,7 +519,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 	 */
 	class ManagedObject<T> extends ManagedObjectBase
 	{
-		ManagedObject(String flowKey, T obj, long estimatedSize, SerializerBase serializer)
+		ManagedObject(String flowKey, T obj, long estimatedSize, SerializerGeneral serializer)
 		{
 			super(flowKey, estimatedSize, serializer);
 			this.object = obj;

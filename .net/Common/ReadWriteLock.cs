@@ -1,4 +1,4 @@
-namespace asyncMemManager.common{
+namespace asyncMemManager.Common{
     using System;
     using System.Threading;
 
