@@ -49,7 +49,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 		this.hotTimeCalculator = coldTimeCalculator;
 		this.persistence = persistence;
 		this.candlesPool = new PriorityBlockingQueue<>(this.config.getCandlePoolSize(), 
-														(c1, c2) -> Integer.compare(c1.size(), c2.size()));
+														(c1, c2) -> Integer.compare(c1.getSize(), c2.getSize()));
 		this.candlesSrc = new ArrayList<>(this.config.getCandlePoolSize());
 		
 		int numberOfManagementThread = this.config.getCandlePoolSize();
@@ -98,7 +98,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 		long countItems = 0;
 		for(ManagedObjectQueue<ManagedObjectBase> queue: this.candlesSrc)
 		{
-			countItems += queue.size();
+			countItems += queue.getSize();
 		}
 		res.append(" Items:"); res.append(countItems);
 		return res.toString();
@@ -112,9 +112,9 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 		}
 		
 		for (ManagedObjectQueue<ManagedObjectBase> candle: this.candlesSrc) {
-			while (candle.size() > 0)
+			while (candle.getSize() > 0)
 			{
-				ManagedObjectBase managedObj = candle.removeAt(candle.size() - 1);		
+				ManagedObjectBase managedObj = candle.getAndRemoveAt(candle.getSize() - 1);		
 				this.usedSize.addAndGet(-managedObj.estimatedSize);	
 				this.persistence.remove(managedObj.key);
 			}
@@ -201,7 +201,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 			this.pollCandle(containerCandle);
 			
 			try {
-				containerCandle.removeAt(managedObj.indexInCandle);
+				containerCandle.getAndRemoveAt(managedObj.indexInCandle);
 				this.usedSize.addAndGet(-managedObj.estimatedSize);							
 				managedObj.setManagementState(AsyncMemManager.obsoletedManageCandle);
 			}
@@ -304,7 +304,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 		this.pollCandle(containerCandle);
 		
 		try {	
-			containerCandle.removeAt(managedObject.indexInCandle);
+			containerCandle.getAndRemoveAt(managedObject.indexInCandle);
 			this.usedSize.addAndGet(-managedObject.estimatedSize);
 			this.persistObject(managedObject);
 			managedObject.setManagementState(null);

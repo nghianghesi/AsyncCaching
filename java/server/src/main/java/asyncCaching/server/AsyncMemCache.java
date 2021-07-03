@@ -43,7 +43,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 
 		this.keyToObjectMap = new ConcurrentHashMap<>(this.config.getInitialSize());
 		this.candlesPool = new PriorityBlockingQueue<>(this.config.getCandlePoolSize(), 
-														(c1, c2) -> Integer.compare(c1.size(), c2.size()));
+														(c1, c2) -> Integer.compare(c1.getSize(), c2.getSize()));
 		this.candlesSrc = new ArrayList<>(this.config.getCandlePoolSize());
 		
 		int initcandleSize = this.config.getInitialSize() / this.config.getCandlePoolSize();
@@ -193,7 +193,7 @@ public class AsyncMemCache implements asyncCaching.server.di.AsyncMemCache {
 	{
 		if (this.pollCandle(cachedObj.containerCandle) != null)
 		{
-			cachedObj.containerCandle.removeAt(cachedObj.candleIndex);
+			cachedObj.containerCandle.getAndRemoveAt(cachedObj.candleIndex);
 			this.candlesPool.offer(cachedObj.containerCandle);
 			cachedObj.containerCandle = null;
 			

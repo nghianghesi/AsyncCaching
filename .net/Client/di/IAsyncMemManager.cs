@@ -1,6 +1,6 @@
 using System;
 
-namespace AsyncMemManager.client.di
+namespace AsyncMemManager.Client.DI
 {
     public interface IAsyncMemManager
     {

@@ -39,8 +39,9 @@ public class ReadWriteLock<T extends ReadWriteLock.ReadWriteLockableObject> impl
 			return this.updownLock.lockable();
 		}
 		
-		return ((lockFactor == 2 && (this.object.getLockFactor() & 1) == 0)
-				|| (lockFactor == 1 && this.object.getLockFactor() == 0));
+		int lockStatus = this.object.getLockFactor();
+		return ((lockFactor == 2 && (lockStatus & 1) == 0)
+				|| (lockFactor == 1 && lockStatus == 0));
 	}
 	
 	private void unlockWhenSynced() {
