@@ -94,7 +94,7 @@ namespace asyncMemManager.Common{
             }
         }
         
-        public void syncPriorityAt(int i) {
+        public void SyncPriorityAt(int i) {
             T moved = this.GetQueueItem(i);
             SiftDownUsingComparator(i, moved);
             if (this.GetQueueItem(i) == moved) {
@@ -102,7 +102,7 @@ namespace asyncMemManager.Common{
             }
         }
         
-        public T getAt(int i)
+        public T GetAt(int i)
         {
             return this.GetQueueItem(i);
         }

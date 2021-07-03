@@ -4,6 +4,9 @@
     using System;
     using System.Collections.Generic;
     using System.Collections.Concurrent;
+    using System.Threading;
+
+    using asyncMemManager.Common;
 
     public class AsyncMemManager : IAsyncMemManager
     {        
@@ -26,7 +29,7 @@
             
         }   
 
-        protected class AsyncMemManagerContainObject
+        public class AsyncMemManagerContainObject
         {
             protected readonly AsyncMemManager manager;
             protected AsyncMemManagerContainObject(AsyncMemManager m)
@@ -74,38 +77,38 @@
             }
         }
         
-        abstract class ManagedObjectBase : IndexableQueuedObject, ReadWriteLockableObject
+        abstract class ManagedObjectBase : IndexableQueuedObject, IReadWriteLockableObject
         {
             /***
             * key value to lookup object, this is auto unique generated
             * also used as key for synchronize access vs management
             */
-            readonly Guid key;
+            internal readonly Guid key;
             
             /**
             * flow key, this is used for estimate waiting time
             */
-            readonly string flowKey;
+            internal readonly string flowKey;
             
             /**
             * original object
             */
-            volatile object obj;
+            internal volatile object obj;
             
             /**
             * time object managed
             */
-            volatile DateTime startTime;
+            internal DateTime startTime;
             
             /**
             * time object expected to be retrieved for async, this is average from previous by keyflow
             */
-            volatile DateTime hotTime;
+            internal DateTime hotTime;
             
             /**
             * estimated by serializer, size of object
             */
-            readonly long estimatedSize;
+            internal readonly long estimatedSize;
             
             /**
             * the candle contain this object, used for fast cleanup, removal
@@ -115,14 +118,14 @@
             /**
             * the index of object in candle, used for fast removal
             */
-            volatile int indexInCandle = -1;
+            internal volatile int indexInCandle = -1;
             
-            volatile int numberOfAccess = 0;
+            internal volatile int numberOfAccess = 0;
             
             /**
             * the serializer to ser/des object for persistence.
             */
-            readonly SerializerGeneral serializer;
+            internal readonly SerializerGeneral serializer;
 
             /**
             * init  ManagedObject 
@@ -130,7 +133,7 @@
             public ManagedObjectBase(string flowKey, long estimatedSize, SerializerGeneral serializer) {
                 this.flowKey = flowKey;
                 this.key = Guid.NewGuid();
-                this.startTime = this.hotTime = LocalDateTime.now();
+                this.startTime = this.hotTime = DateTime.Now;
                 this.estimatedSize = estimatedSize;
                 this.serializer = serializer;
             }
@@ -138,14 +141,14 @@
             /**
             * if object still being setup. object start to be managed setup closed
             */
-            volatile bool doneSetup = false;
+            internal volatile bool doneSetup = false;
             
             /**
             * counting of async flows, object stop to be managed when all aync closed
             */
-            int asyncCounter = 0;
+            internal long asyncCounter = 0;
             
-            bool isObsoleted() {
+            internal bool IsObsoleted() {
                 return this.doneSetup && Interlocked.Read(ref this.asyncCounter) == 0;
             }
             
@@ -153,19 +156,21 @@
             * get management state to have associated action.
             * this is for roughly estimate, as not ensured thread-safe.
             */
-            ManagementState getManagementState()
+            ManagementState ManagementState
             {
-                lock (this) {
-                    ManagedObjectQueue<ManagedObjectBase> c = this.containerCandle;  
-                    if (c == null)
-                    {
-                        return ManagementState.None;
-                    }else if (c == AsyncMemManager.queuedForManageCandle){
-                        return ManagementState.Queued;
-                    }else if (c == AsyncMemManager.obsoletedManageCandle){
-                        return ManagementState.Obsoleted;
-                    }else {
-                        return ManagementState.Managing;
+                get{
+                    lock (this) {
+                        ManagedObjectQueue<ManagedObjectBase> c = this.containerCandle;  
+                        if (c == null)
+                        {
+                            return ManagementState.None;
+                        }else if (c == AsyncMemManager.queuedForManageCandle){
+                            return ManagementState.Queued;
+                        }else if (c == AsyncMemManager.obsoletedManageCandle){
+                            return ManagementState.Obsoleted;
+                        }else {
+                            return ManagementState.Managing;
+                        }
                     }
                 }
             }
@@ -173,7 +178,7 @@
             /**
             * return previous containerCandel
             */
-            ManagedObjectQueue<ManagedObjectBase> setManagementState(ManagedObjectQueue<ManagedObjectBase> containerCandle)
+            ManagedObjectQueue<ManagedObjectBase> SetManagementState(ManagedObjectQueue<ManagedObjectBase> containerCandle)
             {
                 lock (this) {
                     ManagedObjectQueue<ManagedObjectBase> prev = this.containerCandle;
@@ -187,7 +192,7 @@
             */
             private volatile int readWriteCounter = 0;
             
-            public void setIndexInQueue(int idx)
+            public void SetIndexInQueue(int idx)
             {
                 this.indexInCandle = idx;
             }
@@ -195,40 +200,36 @@
             /**
             * whether this object is available for cleanup
             */
-            public bool isPeekable() {
-                return this.readWriteCounter == 0 && this.getManagementState() == ManagementState.Managing && this.indexInCandle >= 0;
+            public bool IsPeekable() {
+                return this.readWriteCounter == 0 && this.ManagementState == ManagementState.Managing && this.indexInCandle >= 0;
             }
             
             /**
             * read locking, used for async flows access object, to ensure data not interfered
             */
-            ReadWriteLock<ManagedObjectBase> lockRead()
+            ReadWriteLock<ManagedObjectBase> LockRead()
             {
-                return new ReadWriteLock.ReadLock<ManagedObjectBase>(this);
+                return new ReadWriteLock<ManagedObjectBase>.ReadLock(this);
             }
             
             /**
             * manage locking, used for cleanup, remove process, to ensure data not interfered 
             */
-            ReadWriteLock<ManagedObjectBase> lockManage()
+            ReadWriteLock<ManagedObjectBase> LockManage()
             {
-                return new ReadWriteLock.WriteLock<ManagedObjectBase>(this);
+                return new ReadWriteLock<ManagedObjectBase>.WriteLock(this);
             }
             
-            public int getLockFactor() {
-                return this.readWriteCounter;
-            }
+            public int LockStatus => this.readWriteCounter;
             
-            public void addLockFactor(int lockfactor) {
+            public void AddLockFactor(int lockfactor) {
                 this.readWriteCounter += lockfactor;
             }
             
-            public Object getLockerKey() {
-                return this.key;
-            }
+            public object LockerKey => this.key;
         }
         
-        static enum ManagementState
+        enum ManagementState
         {
             None,
             Queued,
@@ -239,16 +240,17 @@
 	    /**
 	        * Generic class for ManagedObject
         */
-        class ManagedObject<T> : ManagedObjectBase
+        private class ManagedObject<T> : ManagedObjectBase
         {
-            volatile ManagedObject(string flowKey, T obj, long estimatedSize, SerializerGeneral serializer)
+            public ManagedObject(string flowKey, T obj, long estimatedSize, SerializerGeneral serializer)
+                : base(flowKey, estimatedSize, serializer)
             {
-                super(flowKey, estimatedSize, serializer);
+                
                 this.obj = obj;
             }
         }        
 
-        private class SerializerGeneral
+        class SerializerGeneral
         {	
             private static IDictionary<Type, SerializerGeneral> instances = new ConcurrentDictionary<Type, SerializerGeneral>();
             

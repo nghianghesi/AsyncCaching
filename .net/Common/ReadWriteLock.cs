@@ -5,7 +5,7 @@ namespace asyncMemManager.Common{
     /**
     * key lock for read/write.
     */
-    public class ReadWriteLock<T> : IDisposable where T : ReadWriteLockableObject {
+    public class ReadWriteLock<T> : IDisposable where T : IReadWriteLockableObject {
         protected volatile bool unlocked = false;
         protected ReadWriteLock<T> updownLock = null;
         private int lockFactor;
@@ -17,7 +17,7 @@ namespace asyncMemManager.Common{
             
             while (true) {
                 if (this.IsLockable()) {
-                    lock (this.lockedObject.GetLockerKey()) {
+                    lock (this.lockedObject.LockerKey) {
                         if (this.IsLockable()) {
                             this.lockedObject.AddLockFactor(this.lockFactor);
                             return;
@@ -29,7 +29,7 @@ namespace asyncMemManager.Common{
             }
         }
 
-        private void initUpdownLock(T obj, int lockFactor) {
+        private void InitUpdownLock(T obj, int lockFactor) {
             this.lockedObject = obj;
             this.lockFactor = lockFactor;
             this.lockedObject.AddLockFactor(this.lockFactor);
@@ -41,7 +41,7 @@ namespace asyncMemManager.Common{
                 return this.updownLock.IsLockable();
             }
             
-            int objectLockStatus = this.lockedObject.GetLockFactor();
+            int objectLockStatus = this.lockedObject.LockStatus;
             return ((this.lockFactor == 2 && (objectLockStatus & 1) == 0)
                     || (this.lockFactor == 1 && objectLockStatus == 0));
         }
@@ -55,31 +55,31 @@ namespace asyncMemManager.Common{
             }		
         }
         
-        public void unlock() {
+        public void Unlock() {
             if (updownLock != null) {
-                this.updownLock.unlock();
+                this.updownLock.Unlock();
             } else {
                 if (!this.unlocked) {
-                    lock (this.lockedObject.GetLockerKey()) {
+                    lock (this.lockedObject.LockerKey) {
                         this.UnlockWhenSynced();
                     }
                 }
             }
         }
 
-        public ReadWriteLock<T> upgrade() {
+        public ReadWriteLock<T> Upgrade() {
             if(this.updownLock != null)
             {
-                return this.updownLock.upgrade();
+                return this.updownLock.Upgrade();
             }
             
             if (this.lockFactor == 2) {	
                 ReadWriteLock<T> replaceLock = new ReadWriteLock<T>();
                 bool upgraded = false;
                 while (!upgraded) {
-                    lock (this.lockedObject.GetLockerKey()) {
-                        if ((this.lockedObject.GetLockFactor() & 1) == 0) {
-                            replaceLock.initUpdownLock(this.lockedObject, 1);
+                    lock (this.lockedObject.LockerKey) {
+                        if ((this.lockedObject.LockStatus & 1) == 0) {
+                            replaceLock.InitUpdownLock(this.lockedObject, 1);
                             this.UnlockWhenSynced();
                             upgraded = true;						
                         }else {
@@ -89,7 +89,7 @@ namespace asyncMemManager.Common{
                     Thread.Yield();
                 }
 
-                while (this.lockedObject.GetLockFactor() > 1) {
+                while (this.lockedObject.LockStatus > 1) {
                     Thread.Yield();
                 }
                 
@@ -99,16 +99,16 @@ namespace asyncMemManager.Common{
             }
         }
 
-        public ReadWriteLock<T> downgrade() {
+        public ReadWriteLock<T> Downgrade() {
             if(this.updownLock != null)
             {
-                return this.updownLock.downgrade();
+                return this.updownLock.Downgrade();
             }
             
             if (this.lockFactor == 1) {			
                 ReadWriteLock<T> replaceLock = new ReadWriteLock<T>();
-                replaceLock.initUpdownLock(this.lockedObject, 2);
-                this.unlock();
+                replaceLock.InitUpdownLock(this.lockedObject, 2);
+                this.Unlock();
                 return this.updownLock = replaceLock;
             } else {
                 return this;
@@ -119,14 +119,14 @@ namespace asyncMemManager.Common{
             if (this.updownLock != null) {
                 this.updownLock.Dispose();
             } else if (!this.unlocked) {
-                this.unlock();
+                this.Unlock();
             }
         }
 
         /**
         * Read key lock {@link ManagedObjectBase#lockRead()}
         */
-        private class ReadLock : ReadWriteLock<T>
+        public class ReadLock : ReadWriteLock<T>
         {
             public ReadLock(T obj) {
                 this.InitLock(obj, 2);
@@ -136,7 +136,7 @@ namespace asyncMemManager.Common{
         /**
         * Read key lock {@link ManagedObjectBase#lockRead()}
         */
-        private class WriteLock : ReadWriteLock<T>
+        public class WriteLock : ReadWriteLock<T>
         {
             public WriteLock(T obj) {
                 this.InitLock(obj, 1);
@@ -144,11 +144,16 @@ namespace asyncMemManager.Common{
         }
     }
 
-    public interface ReadWriteLockableObject {
-        int GetLockFactor();
+    public interface IReadWriteLockableObject {
+        int LockStatus{
+            get;
+        }
 
         void AddLockFactor(int lockfactor);
 
-        object GetLockerKey();
+        object LockerKey
+        {
+            get;
+        }
     }    
 }
