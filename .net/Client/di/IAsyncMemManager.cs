@@ -29,4 +29,27 @@ namespace AsyncMemManager.Client.DI
         public void Stats(Configuration config, string flowKey, int nth, long waittime);
 	    public long Calculate(Configuration config, string flowKey, int nth);
     }
+    
+    public interface IPersistence {
+	/**
+	 * save data storage
+	 * @param key
+	 * @param data
+	 * @return
+	 */
+	public void Store(Guid key, string data, long expectedDuration);
+	
+	/**
+	 * retrieve and remove data from storage
+	 * @param key
+	 * @return
+	 */
+	public String Retrieve(Guid key);
+	
+	/**
+	 * remove data from storage.
+	 * @param key
+	 */
+	public void Remove(Guid key);
+}
 }

@@ -11,9 +11,9 @@ namespace asyncMemManager.Common{
         
         volatile T[] queue;
         private volatile int size = 0;
-        private readonly Comparer<T> comparator;
+        private readonly IComparer<T> comparator;
         
-        public ManagedObjectQueue(int initSize, Comparer<T> comparator) {
+        public ManagedObjectQueue(int initSize, IComparer<T> comparator) {
             this.queue = new T[initSize];
             this.comparator = comparator;
         }

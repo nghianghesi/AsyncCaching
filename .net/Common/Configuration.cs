@@ -24,25 +24,15 @@ namespace AsyncMemManager.Client.DI
             this.flowKeyConfig = flowKeyConfig;
         }
 
-        public int getInitialSize() {
-            return initialSize;
-        }
+        public int InitialSize => initialSize;
 
-        public int getCapacity() {
-            return capacity;
-        }
+        public int Capacity => capacity;
 
-        public int getCleanupInterval() {
-            return cleanupInterval;
-        }
+        public int CleanupInterval => cleanupInterval;
 
-        public int getCandlePoolSize() {
-            return candlePoolSize;
-        }
+        public int CandlePoolSize => candlePoolSize;
 
-        public IDictionary<String, FlowKeyConfiguration> getFlowKeyConfig() {
-            return flowKeyConfig;
-        }	
+        public IDictionary<String, FlowKeyConfiguration> FlowKeyConfig => flowKeyConfig;
     }
 
     public class FlowKeyConfiguration

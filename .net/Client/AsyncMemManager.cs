@@ -14,10 +14,54 @@
         private static readonly ManagedObjectQueue<ManagedObjectBase> queuedForManageCandle = new ManagedObjectQueue<ManagedObjectBase>(0, null);
         private static readonly ManagedObjectQueue<ManagedObjectBase> obsoletedManageCandle = new ManagedObjectQueue<ManagedObjectBase>(0, null);
 
+        private Configuration config;
+        private IHotTimeCalculator hotTimeCalculator;
+        private IPersistence persistence;
+        private BlockingCollection<ManagedObjectQueue<ManagedObjectBase>> candlesPool;	
+        private List<ManagedObjectQueue<ManagedObjectBase>> candlesSrc;
+        private long usedSize = 0;
+        private readonly IComparer<ManagedObjectBase> cacheNodeComparator = new CandleComparer();
+
+
+        public AsyncMemManager(Configuration config,
+                                    IHotTimeCalculator coldTimeCalculator, 
+                                    IPersistence persistence) 
+        {
+            this.config = config;
+            this.hotTimeCalculator = coldTimeCalculator;
+            this.persistence = persistence;
+            this.candlesPool = new BlockingCollection<ManagedObjectQueue<ManagedObjectBase>>(this.config.CandlePoolSize);
+            this.candlesSrc = new List<ManagedObjectQueue<ManagedObjectBase>>(this.config.CandlePoolSize);
+            
+            int numberOfManagementThread = this.config.CandlePoolSize;
+            numberOfManagementThread = numberOfManagementThread > 0 ? numberOfManagementThread : 1;
+            
+            int initcandleSize = this.config.InitialSize / this.config.CandlePoolSize;
+            initcandleSize = initcandleSize > 0 ? initcandleSize : this.config.InitialSize;
+            
+            // init candle pool
+            for(int i = 0; i < config.CandlePoolSize; i++)
+            {
+                ManagedObjectQueue<ManagedObjectBase> candle = new ManagedObjectQueue<ManagedObjectBase>(initcandleSize, this.cacheNodeComparator); // thread-safe ensured by candlesPool
+                this.candlesPool.Add(candle);
+                this.candlesSrc.Add(candle);
+            }
+        }
 
         public ISetupObject<T> Manage<T>(string flowKey, T obj, IAsyncMemSerializer<T> serializer) 
         {
-            return null;
+            		// init key, mapKey, newnode
+            if (obj == null)
+            {
+                return null;
+            }
+            
+            SerializerGeneral baseSerializer = SerializerGeneral.GetSerializerBaseInstance(serializer);
+            long estimatedSize = serializer.EstimateObjectSize(obj);
+            
+            ManagedObject<T> managedObj = new ManagedObject<T>(flowKey, obj,  estimatedSize, baseSerializer);
+            
+            return new SetupObject<T>(this, managedObj);
         }  
         
         public string DebugInfo()
@@ -26,10 +70,22 @@
         }        
 
         public void Dispose(){
-            
+            for (int i=0; i < this.candlesSrc.Count; i++)
+            {
+                this.candlesPool.Take();
+            }
+		
+            foreach (ManagedObjectQueue<ManagedObjectBase> candle in this.candlesSrc) {
+                while (candle.Size > 0)
+                {
+                    ManagedObjectBase managedObj = candle.GetAndRemoveAt(candle.Size - 1);		
+                    Interlocked.Add(ref this.usedSize, -managedObj.estimatedSize);	
+                    this.persistence.Remove(managedObj.key);
+                }
+            }
         }   
 
-        public class AsyncMemManagerContainObject
+        private class AsyncMemManagerContainObject
         {
             protected readonly AsyncMemManager manager;
             protected AsyncMemManagerContainObject(AsyncMemManager m)
@@ -38,9 +94,9 @@
             }
         }
 	
-        public class SetupObject<T> : AsyncMemManagerContainObject, ISetupObject<T>
+        private class SetupObject<T> : AsyncMemManagerContainObject, ISetupObject<T>
         {            
-            protected SetupObject(AsyncMemManager manager) : base (manager){
+            public SetupObject(AsyncMemManager manager, ManagedObjectBase obj) : base (manager){
             }
 
             public IAsyncObject<T> AsyncO()
@@ -58,9 +114,9 @@
             }
         }
         
-        public class AsyncObject<T> : AsyncMemManagerContainObject, IAsyncObject<T>
+        private class AsyncObject<T> : AsyncMemManagerContainObject, IAsyncObject<T>
         {		           
-            protected AsyncObject(AsyncMemManager manager) : base (manager){
+            public AsyncObject(AsyncMemManager manager, ManagedObjectBase obj) : base (manager){
             }
 
             public R Supply<R>(Func<T,R> f)
@@ -77,7 +133,7 @@
             }
         }
         
-        abstract class ManagedObjectBase : IndexableQueuedObject, IReadWriteLockableObject
+        private abstract class ManagedObjectBase : IndexableQueuedObject, IReadWriteLockableObject
         {
             /***
             * key value to lookup object, this is auto unique generated
@@ -229,7 +285,7 @@
             public object LockerKey => this.key;
         }
         
-        enum ManagementState
+        private enum ManagementState
         {
             None,
             Queued,
@@ -244,13 +300,21 @@
         {
             public ManagedObject(string flowKey, T obj, long estimatedSize, SerializerGeneral serializer)
                 : base(flowKey, estimatedSize, serializer)
-            {
-                
+            {                
                 this.obj = obj;
             }
-        }        
+        } 
 
-        class SerializerGeneral
+        private class CandleComparer : IComparer<ManagedObjectBase> 
+        {
+            public int Compare(ManagedObjectBase n1, ManagedObjectBase n2){
+                return n2.IsObsoleted() ? 1 : 
+                        n1.IsObsoleted() ? -1 : 
+                            n2.hotTime.CompareTo(n1.hotTime);
+            }
+        }
+
+        private class SerializerGeneral
         {	
             private static IDictionary<Type, SerializerGeneral> instances = new ConcurrentDictionary<Type, SerializerGeneral>();
             
