@@ -4,6 +4,7 @@
     using System;
     using System.Collections.Generic;
     using System.Collections.Concurrent;
+    using System.Linq;
     using System.Threading;
 
     using asyncMemManager.Common;
@@ -17,7 +18,7 @@
         private Configuration config;
         private IHotTimeCalculator hotTimeCalculator;
         private IPersistence persistence;
-        private BlockingCollection<ManagedObjectQueue<ManagedObjectBase>> candlesPool;	
+        private List<ManagedObjectQueue<ManagedObjectBase>> candlesPool;	
         private List<ManagedObjectQueue<ManagedObjectBase>> candlesSrc;
         private long usedSize = 0;
         private readonly IComparer<ManagedObjectBase> cacheNodeComparator = new CandleComparer();
@@ -30,7 +31,7 @@
             this.config = config;
             this.hotTimeCalculator = coldTimeCalculator;
             this.persistence = persistence;
-            this.candlesPool = new BlockingCollection<ManagedObjectQueue<ManagedObjectBase>>(this.config.CandlePoolSize);
+            this.candlesPool = new List<ManagedObjectQueue<ManagedObjectBase>>(this.config.CandlePoolSize);
             this.candlesSrc = new List<ManagedObjectQueue<ManagedObjectBase>>(this.config.CandlePoolSize);
             
             int numberOfManagementThread = this.config.CandlePoolSize;
@@ -70,9 +71,9 @@
         }        
 
         public void Dispose(){
-            for (int i=0; i < this.candlesSrc.Count; i++)
+            lock (this.candlesPool)
             {
-                this.candlesPool.Take();
+                this.candlesPool.Clear();
             }
 		
             foreach (ManagedObjectQueue<ManagedObjectBase> candle in this.candlesSrc) {
@@ -83,7 +84,242 @@
                     this.persistence.Remove(managedObj.key);
                 }
             }
-        }   
+        } 
+	
+        private void Track(ManagedObjectBase managedObj) {		
+            this.DoManageAction(managedObj, ManagementState.None | ManagementState.Managing, (containerCandle) => {
+                    
+                long nextwaitDuration = this.hotTimeCalculator.Calculate(this.config, managedObj.flowKey, managedObj.numberOfAccess);
+                managedObj.hotTime = managedObj.startTime.AddMilliseconds(nextwaitDuration);	
+                bool needcheckRemove = true;
+                if (containerCandle == null) // unmanaged, probably none or cached.
+                {
+                    // put node to candle	
+                    
+                    bool shouldTracking = true;
+                    if (this.usedSize + managedObj.estimatedSize > this.config.Capacity) {
+                        ManagedObjectBase coldestNode = this.GetColdestCandidate();
+                        
+                        if (coldestNode != null && this.cacheNodeComparator.Compare(managedObj, coldestNode) > 0)
+                        {
+                            // storing to cache to reserve space for new object.
+                            this.DoManageAction(coldestNode, ManagementState.Managing, 
+                                    (ManagedObjectQueue<ManagedObjectBase> coldestCandle) => { 
+                                        this.Cache(coldestCandle, coldestNode); 
+                                    });
+                        }else {						 
+                            this.PersistObject(managedObj);
+                            managedObj.SetManagementState(null);
+                            shouldTracking = false;
+                            needcheckRemove = false;
+                        }
+                    }
+                    
+                    if (shouldTracking)
+                    {
+                        ManagedObjectQueue<ManagedObjectBase> candle = null;
+                        candle = this.PollCandle();
+                
+                        if (!managedObj.IsObsoleted()) {
+                            candle.Add(managedObj);
+                            Interlocked.Add(ref this.usedSize, managedObj.estimatedSize);
+                            managedObj.SetManagementState(candle);					
+                        }else {
+                            needcheckRemove = false;
+                            managedObj.SetManagementState(null);
+                        }				
+                        
+                        this.OfferCandleBackAfterUsed(candle);
+                    }
+                } else {
+                    this.PollCandle(containerCandle);
+                    
+                    managedObj.hotTime = managedObj.hotTime.AddMilliseconds(nextwaitDuration);
+                    if (!managedObj.IsObsoleted()) {
+                        containerCandle.SyncPriorityAt(managedObj.indexInCandle);
+                    }							
+                    managedObj.SetManagementState(containerCandle); // restore management state --> unlock other queueing
+                    
+                    this.OfferCandleBackAfterUsed(containerCandle);
+                }			
+
+                if (needcheckRemove && managedObj.IsObsoleted()) { // to void other remove failed to be queued while this action running.
+                    this.RemoveFromManagement(managedObj);
+                }			
+
+                this.CleanUp();
+            });
+        }
+	
+        private void RemoveFromManagement(ManagedObjectBase managedObj) {
+            this.DoManageAction(managedObj, ManagementState.Managing, (ManagedObjectQueue<ManagedObjectBase> containerCandle) => {
+                this.PollCandle(containerCandle);
+                
+                containerCandle.GetAndRemoveAt(managedObj.indexInCandle);
+                Interlocked.Add(ref this.usedSize, -managedObj.estimatedSize);							
+                managedObj.SetManagementState(AsyncMemManager.obsoletedManageCandle);
+                    
+                this.OfferCandleBackAfterClean(containerCandle);
+            });
+        }	
+	             
+	
+        /**
+        * execute manage action for managedObj, ensure only one action queued per object, bypass this request if other action queued.
+        */
+        private bool DoManageAction(ManagedObjectBase managedObj, ManagementState expectedCurrentState, Action<ManagedObjectQueue<ManagedObjectBase>> action)	
+        {
+            bool queued = false;
+            ManagedObjectQueue<ManagedObjectBase> containerCandle = null;
+            ManagementState state = managedObj.ManagementState;
+            if ((expectedCurrentState & state) > 0) { 
+                lock (managedObj) { 
+                    if (state == managedObj.ManagementState) // state unchanged. 
+                    { 
+                        containerCandle = managedObj.SetManagementState(AsyncMemManager.queuedForManageCandle);
+                        queued = true;
+                    }
+                }
+                
+                if(queued)
+                {
+                    action(containerCandle);
+                }
+            }
+            
+            return queued;
+        }
+        
+        private bool IsOverCapability()
+        {
+            return this.usedSize > this.config.Capacity;
+        }
+        
+        private ManagedObjectQueue<ManagedObjectBase>  PollCandle(){
+            ManagedObjectQueue<ManagedObjectBase> res = null;
+            
+            while (res == null)
+            {
+                lock(this.candlesPool){
+                    res = this.candlesPool.FirstOrDefault();
+                }
+
+                if(res == null)
+                {
+                    Thread.Yield();
+                }
+            }
+
+            return res;
+        }
+        
+        private ManagedObjectQueue<ManagedObjectBase>  PollCandle(ManagedObjectQueue<ManagedObjectBase> containerCandle)
+        {
+            bool removed = false;
+            while (!removed)
+            {
+                lock(this.candlesPool)
+                {
+                    removed = this.candlesPool.Remove(containerCandle);
+                }
+
+                if (!removed)
+                {
+                    Thread.Yield();
+                }
+            }
+            return containerCandle;
+        }
+
+        private void OfferCandleBackAfterClean(ManagedObjectQueue<ManagedObjectBase> containerCandle)
+        {
+            lock(this.candlesPool)
+            {
+                this.candlesPool.Add(containerCandle);
+            }
+        }
+
+        private void OfferCandleBackAfterUsed(ManagedObjectQueue<ManagedObjectBase> containerCandle)
+        {
+            lock(this.candlesPool)
+            {
+                this.candlesPool.Append(containerCandle);
+            }
+        }
+        
+        private ManagedObjectBase GetColdestCandidate()
+        {			
+            ManagedObjectBase coldestCandidate = null;
+            foreach (ManagedObjectQueue<ManagedObjectBase> candle in this.candlesSrc)
+            {
+                ManagedObjectBase node = candle.GetPollCandidate();
+                if (node != null)
+                {
+                    if (coldestCandidate == null || cacheNodeComparator.Compare(coldestCandidate, node) > 0)
+                    {
+                        coldestCandidate = node;
+                    }
+                }
+            }
+            
+            return coldestCandidate;
+        }
+	
+        private void PersistObject(ManagedObjectBase managedObject)
+        {
+            if (Interlocked.Read(ref managedObject.asyncCounter) > 0)
+            {
+                ReadWriteLock<ManagedObjectBase> locker = managedObject.LockManage();
+                if(managedObject.obj != null && !managedObject.IsObsoleted())
+                {
+                    long expectedDuration = (long)(managedObject.hotTime - DateTime.Now).TotalMilliseconds;
+                    this.persistence.Store(managedObject.key, managedObject.serializer.Serialize(managedObject.obj), expectedDuration);
+                    managedObject.obj = null;
+                }
+
+                locker.Unlock();			
+            }
+        }
+        
+        /*
+        * need containerCandle as managedObject's containerCandle may be marked as queued.
+        */
+        private void Cache(ManagedObjectQueue<ManagedObjectBase> containerCandle, ManagedObjectBase managedObject) {
+            this.PollCandle(containerCandle);
+            
+            containerCandle.GetAndRemoveAt(managedObject.indexInCandle);
+            Interlocked.Add(ref this.usedSize, -managedObject.estimatedSize);
+            this.PersistObject(managedObject);
+            managedObject.SetManagementState(null);
+                    
+            this.OfferCandleBackAfterClean(containerCandle);
+        }
+        /**
+        * this is expected to be run in manage executor, by queueCleanUp
+        */
+        private void CleanUp()
+        {
+            while (this.IsOverCapability())
+            {
+                bool isReduced = false;
+                // find the coldest candidate
+                ManagedObjectBase coldestObject = this.GetColdestCandidate();
+                
+                // candidate founded
+                if (coldestObject != null)
+                {							
+                    isReduced = this.DoManageAction(coldestObject, ManagementState.Managing, 
+                            (ManagedObjectQueue<ManagedObjectBase> coldestCandle) => {
+                                this.Cache(coldestCandle, coldestObject);
+                        });
+                }
+                
+                if (!isReduced)
+                {
+                    Thread.Yield();
+                }
+            }
+        }
 
         private class AsyncMemManagerContainObject
         {
@@ -212,7 +448,7 @@
             * get management state to have associated action.
             * this is for roughly estimate, as not ensured thread-safe.
             */
-            ManagementState ManagementState
+            internal ManagementState ManagementState
             {
                 get{
                     lock (this) {
@@ -234,7 +470,7 @@
             /**
             * return previous containerCandel
             */
-            ManagedObjectQueue<ManagedObjectBase> SetManagementState(ManagedObjectQueue<ManagedObjectBase> containerCandle)
+            internal ManagedObjectQueue<ManagedObjectBase> SetManagementState(ManagedObjectQueue<ManagedObjectBase> containerCandle)
             {
                 lock (this) {
                     ManagedObjectQueue<ManagedObjectBase> prev = this.containerCandle;
@@ -263,7 +499,7 @@
             /**
             * read locking, used for async flows access object, to ensure data not interfered
             */
-            ReadWriteLock<ManagedObjectBase> LockRead()
+            internal ReadWriteLock<ManagedObjectBase> LockRead()
             {
                 return new ReadWriteLock<ManagedObjectBase>.ReadLock(this);
             }
@@ -271,7 +507,7 @@
             /**
             * manage locking, used for cleanup, remove process, to ensure data not interfered 
             */
-            ReadWriteLock<ManagedObjectBase> LockManage()
+            internal ReadWriteLock<ManagedObjectBase> LockManage()
             {
                 return new ReadWriteLock<ManagedObjectBase>.WriteLock(this);
             }
@@ -285,12 +521,13 @@
             public object LockerKey => this.key;
         }
         
+        [Flags]
         private enum ManagementState
         {
-            None,
-            Queued,
-            Managing,
-            Obsoleted
+            None = 1,
+            Queued = 0,
+            Managing = 2,
+            Obsoleted = 4
         }
 	
 	    /**

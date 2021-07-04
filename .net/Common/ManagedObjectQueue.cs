@@ -25,20 +25,20 @@ namespace asyncMemManager.Common{
                     + ((oldCapacity < 64) ? (oldCapacity + 2) : (oldCapacity >> 1));
             // overflow-conscious code
             if (newCapacity - MAX_ARRAY_SIZE > 0)
-                newCapacity = hugeCapacity(minCapacity);
+                newCapacity = HugeCapacity(minCapacity);
             
             T[] newqueue = new T[newCapacity];
             Array.Copy(queue, newqueue, queue.Length);
             queue = newqueue;
         }
         
-        private static int hugeCapacity(int minCapacity) {
+        private static int HugeCapacity(int minCapacity) {
             if (minCapacity < 0) // overflow
                 throw new OutOfMemoryException();
             return (minCapacity > MAX_ARRAY_SIZE) ? int.MaxValue : MAX_ARRAY_SIZE;
         }
         
-        public T getPollCandidate() {
+        public T GetPollCandidate() {
             // size expected much higher than MAX_POLL_CANDIDATE_CHECK_RANGE, so there should be thread-safe index out of range issue
             for (int i=0; i<MAX_POLL_CANDIDATE_CHECK_RANGE && i < this.size; i++)
             {
