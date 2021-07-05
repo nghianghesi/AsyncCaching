@@ -61,15 +61,14 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
             grow(i + 1);
         size = i + 1;
         if (i == 0) {
-            queue.set(0, e);
-            e.setIndexInQueue(0);
+            this.SetQueueItem(0, e);
         }
         else
         	siftUpUsingComparator(i, e);
         return true;
     }	    
 
-	public T removeAt(int i) {
+	public T getAndRemoveAt(int i) {
         // assert i >= 0 && i < size;
 		if (i >= size)
 		{
@@ -117,12 +116,10 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
             T e = queue.get(parent);
             if (comparator.compare(x, e) >= 0)
                 break;
-            queue.set(k, e);
-            e.setIndexInQueue(k);
+            this.SetQueueItem(k, e);
             k = parent;
         }
-        queue.set(k, x);
-        x.setIndexInQueue(k);
+        this.SetQueueItem(k, x);
     }    
     
 	private void siftDownUsingComparator(int k, T x) {
@@ -132,18 +129,25 @@ public class ManagedObjectQueue<T extends IndexableQueuedObject> {
             T c = queue.get(child);
             int right = child + 1;
             if (right < size && comparator.compare(c, queue.get(right)) > 0)
-                c = queue.get(child = right);
+                c = this.queue.get(child = right);
             if (comparator.compare(x, c) <= 0)
                 break;
-            queue.set(k, c);
-            c.setIndexInQueue(k);
+            this.SetQueueItem(k, c);
             k = child;
         }
-        queue.set(k, x);
-        x.setIndexInQueue(k);
+        this.SetQueueItem(k, x);
     }
+
+    private void SetQueueItem(int idx, T value)
+    {
+        this.queue.set(idx, value);
+        if (value!=null) {
+        	value.setIndexInQueue(idx);
+        }
+    }
+	
     
-    public int size() 
+    public int getSize() 
     {
     	return this.size;
     }

@@ -49,7 +49,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 		this.hotTimeCalculator = coldTimeCalculator;
 		this.persistence = persistence;
 		this.candlesPool = new PriorityBlockingQueue<>(this.config.getCandlePoolSize(), 
-														(c1, c2) -> Integer.compare(c1.size(), c2.size()));
+														(c1, c2) -> Integer.compare(c1.getSize(), c2.getSize()));
 		this.candlesSrc = new ArrayList<>(this.config.getCandlePoolSize());
 		
 		int numberOfManagementThread = this.config.getCandlePoolSize();
@@ -83,7 +83,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 			return null;
 		}
 		
-		SerializerBase baseSerializer = SerializerBase.getSerializerBaseInstance(serializer);
+		SerializerGeneral baseSerializer = SerializerGeneral.getSerializerBaseInstance(serializer);
 		long estimatedSize = serializer.estimateObjectSize(object);
 		
 		ManagedObject<T> managedObj = new ManagedObject<>(flowKey, object,  estimatedSize, baseSerializer);
@@ -98,7 +98,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 		long countItems = 0;
 		for(ManagedObjectQueue<ManagedObjectBase> queue: this.candlesSrc)
 		{
-			countItems += queue.size();
+			countItems += queue.getSize();
 		}
 		res.append(" Items:"); res.append(countItems);
 		return res.toString();
@@ -112,9 +112,9 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 		}
 		
 		for (ManagedObjectQueue<ManagedObjectBase> candle: this.candlesSrc) {
-			while (candle.size() > 0)
+			while (candle.getSize() > 0)
 			{
-				ManagedObjectBase managedObj = candle.removeAt(candle.size() - 1);		
+				ManagedObjectBase managedObj = candle.getAndRemoveAt(candle.getSize() - 1);		
 				this.usedSize.addAndGet(-managedObj.estimatedSize);	
 				this.persistence.remove(managedObj.key);
 			}
@@ -201,7 +201,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 			this.pollCandle(containerCandle);
 			
 			try {
-				containerCandle.removeAt(managedObj.indexInCandle);
+				containerCandle.getAndRemoveAt(managedObj.indexInCandle);
 				this.usedSize.addAndGet(-managedObj.estimatedSize);							
 				managedObj.setManagementState(AsyncMemManager.obsoletedManageCandle);
 			}
@@ -304,7 +304,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 		this.pollCandle(containerCandle);
 		
 		try {	
-			containerCandle.removeAt(managedObject.indexInCandle);
+			containerCandle.getAndRemoveAt(managedObject.indexInCandle);
 			this.usedSize.addAndGet(-managedObject.estimatedSize);
 			this.persistObject(managedObject);
 			managedObject.setManagementState(null);
@@ -398,12 +398,12 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 		/**
 		 * the serializer to ser/des object for persistence.
 		 */
-		final SerializerBase serializer;
+		final SerializerGeneral serializer;
 
 		/**
 		 * init  ManagedObject 
 		 */
-		public ManagedObjectBase(String flowKey, long estimatedSize, SerializerBase serializer) {
+		public ManagedObjectBase(String flowKey, long estimatedSize, SerializerGeneral serializer) {
 			this.flowKey = flowKey;
 			this.key = UUID.randomUUID();
 			this.startTime = this.hotTime = LocalDateTime.now();
@@ -519,7 +519,7 @@ public class AsyncMemManager implements asyncMemManager.client.di.AsyncMemManage
 	 */
 	class ManagedObject<T> extends ManagedObjectBase
 	{
-		ManagedObject(String flowKey, T obj, long estimatedSize, SerializerBase serializer)
+		ManagedObject(String flowKey, T obj, long estimatedSize, SerializerGeneral serializer)
 		{
 			super(flowKey, estimatedSize, serializer);
 			this.object = obj;
