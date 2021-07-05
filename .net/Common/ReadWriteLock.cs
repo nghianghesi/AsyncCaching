@@ -1,6 +1,7 @@
 namespace AsyncMemManager.Common{
     using System;
     using System.Threading;
+    using System.Threading.Tasks;
 
     /**
     * key lock for read/write.
@@ -25,7 +26,7 @@ namespace AsyncMemManager.Common{
                     }
                 }
 
-                Thread.Yield();
+                Task.Yield();
             }
         }
 
@@ -86,11 +87,11 @@ namespace AsyncMemManager.Common{
                             this.UnlockWhenSynced();
                         }
                     }
-                    Thread.Yield();
+                    Task.Yield();
                 }
 
                 while (this.lockedObject.LockStatus > 1) {
-                    Thread.Yield();
+                    Task.Yield();
                 }
                 
                 return this.updownLock = replaceLock;			

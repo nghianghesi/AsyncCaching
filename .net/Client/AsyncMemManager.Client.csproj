@@ -5,12 +5,13 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Common/AsyncMemManager.Common.csproj" />
-    <PackageReference Include="refit" Version="6.0.38" />    
+    <PackageReference Include="refit" Version="6.0.38" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="AsyncMemManagerImpl.cs" />
     <Content Include="AvgWaitTimeCalculator.cs" />
-    <Content Include="di\IAsyncMemManager.cs" />    
+    <Content Include="di\IAsyncMemManager.cs" />
     <Content Include="MemCacheServerPersistence.cs" />
+    <Content Include="HttpClientDiagnosticsHandler.cs" />
   </ItemGroup>
 </Project>

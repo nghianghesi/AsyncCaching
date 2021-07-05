@@ -36,6 +36,8 @@
 				    Console.WriteLine("1st Async "+ idx + " " + e12.Supply((o) => o.GetSomeText()));
 
                     Thread.Sleep(50 + new Random().Next(50));
+
+                    Console.WriteLine(memManager.DebugInfo());
                 });
 
                 tasks.Add(t.ContinueWith((_)=>{
@@ -46,6 +48,7 @@
 					});
 
                     Thread.Sleep(100 + new Random().Next(50));
+                    Console.WriteLine(memManager.DebugInfo());
                 }));
 
                 tasks.Add(t.ContinueWith((_)=>{
@@ -54,14 +57,18 @@
 					Console.WriteLine("3rd Async "+ idx + " " + e3.Supply((o) => o.GetSomeText()));
 
                     Thread.Sleep(150 + new Random().Next(50));
+                    Console.WriteLine(memManager.DebugInfo());
                 }));
+
+                setupEntity.Close();
 
                 Thread.Sleep(2 + new Random().Next(10));
             }
 
             Console.WriteLine("All task queued");
-            Task.WaitAll(tasks.ToArray());      
+            Task.WaitAll(tasks.ToArray());            
             Console.WriteLine("All task completed");
+            Console.WriteLine(memManager.DebugInfo());
         }
     }
 }

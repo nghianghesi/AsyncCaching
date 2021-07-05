@@ -6,6 +6,8 @@
     using System.Collections.Concurrent;
     using System.Linq;
     using System.Threading;
+    using System.Threading.Tasks;
+    using System.Text;
 
     using AsyncMemManager.Common;
 
@@ -18,7 +20,7 @@
         private Configuration config;
         private IHotTimeCalculator hotTimeCalculator;
         private IPersistence persistence;
-        private List<ManagedObjectQueue<ManagedObjectBase>> candlesPool;	
+        private LinkedList<ManagedObjectQueue<ManagedObjectBase>> candlesPool;	
         private List<ManagedObjectQueue<ManagedObjectBase>> candlesSrc;
         private long usedSize = 0;
         private readonly IComparer<ManagedObjectBase> cacheNodeComparator = new CandleComparer();
@@ -31,7 +33,7 @@
             this.config = config;
             this.hotTimeCalculator = coldTimeCalculator;
             this.persistence = persistence;
-            this.candlesPool = new List<ManagedObjectQueue<ManagedObjectBase>>(this.config.CandlePoolSize);
+            this.candlesPool = new LinkedList<ManagedObjectQueue<ManagedObjectBase>>();
             this.candlesSrc = new List<ManagedObjectQueue<ManagedObjectBase>>(this.config.CandlePoolSize);
             
             int numberOfManagementThread = this.config.CandlePoolSize;
@@ -44,7 +46,7 @@
             for(int i = 0; i < config.CandlePoolSize; i++)
             {
                 ManagedObjectQueue<ManagedObjectBase> candle = new ManagedObjectQueue<ManagedObjectBase>(initcandleSize, this.cacheNodeComparator); // thread-safe ensured by candlesPool
-                this.candlesPool.Add(candle);
+                this.candlesPool.AddFirst(candle);
                 this.candlesSrc.Add(candle);
             }
         }
@@ -66,8 +68,18 @@
         }  
         
         public string DebugInfo()
-        {
-            return string.Empty;
+        {            
+            StringBuilder res = new StringBuilder();
+            res.Append("Used:"); res.Append(this.usedSize);
+            
+            long countItems = 0;
+            foreach(ManagedObjectQueue<ManagedObjectBase> queue in this.candlesSrc)
+            {
+                countItems += queue.Size;
+            }
+
+            res.Append(" Items:"); res.Append(countItems);
+            return res.ToString();
         }        
 
         public void Dispose(){
@@ -200,13 +212,17 @@
             
             while (res == null)
             {
-                lock(this.candlesPool){
-                    res = this.candlesPool.FirstOrDefault();
+                lock(this.candlesPool){                                                            
+                    if(this.candlesPool.Any())
+                    {
+                        res = this.candlesPool.First();
+                        this.candlesPool.RemoveFirst();
+                    }
                 }
 
                 if(res == null)
                 {
-                    Thread.Yield();
+                    Task.Yield();
                 }
             }
 
@@ -225,7 +241,7 @@
 
                 if (!removed)
                 {
-                    Thread.Yield();
+                    Task.Yield();
                 }
             }
             return containerCandle;
@@ -235,7 +251,7 @@
         {
             lock(this.candlesPool)
             {
-                this.candlesPool.Add(containerCandle);
+                this.candlesPool.AddFirst(containerCandle);
             }
         }
 
@@ -243,7 +259,7 @@
         {
             lock(this.candlesPool)
             {
-                this.candlesPool.Append(containerCandle);
+                this.candlesPool.AddLast(containerCandle);
             }
         }
         
@@ -316,7 +332,7 @@
                 
                 if (!isReduced)
                 {
-                    Thread.Yield();
+                    Task.Yield();
                 }
             }
         }
