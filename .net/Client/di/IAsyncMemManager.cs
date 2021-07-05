@@ -1,22 +1,26 @@
 namespace AsyncMemManager.Client.DI
 {
     using System;
+	using AsyncMemManager.Common;
 
     public interface IAsyncMemManager
     {        
-        public ISetupObject<T> Manage<T>(String flowKey, T obj, IAsyncMemSerializer<T> serializer) ;
+        public ISetupObject<T> Manage<T>(String flowKey, T obj, IAsyncMemSerializer<T> serializer) where T : class;
         public String DebugInfo(); 
     }
 	
 	public interface ISetupObject<T> : IDisposable{
 		public IAsyncObject<T> AsyncO();
 		public T O();
+
+		public void Close();
 	}
 	
 	public interface IAsyncObject<T> : IDisposable
 	{		
 		public R Supply<R>(Func<T,R> f);
 		public void Apply(Action<T> f);
+		public void Close();
 	}
 
     public interface IAsyncMemSerializer<T> {
@@ -31,25 +35,25 @@ namespace AsyncMemManager.Client.DI
     }
     
     public interface IPersistence {
-	/**
-	 * save data storage
-	 * @param key
-	 * @param data
-	 * @return
-	 */
-	public void Store(Guid key, string data, long expectedDuration);
-	
-	/**
-	 * retrieve and remove data from storage
-	 * @param key
-	 * @return
-	 */
-	public String Retrieve(Guid key);
-	
-	/**
-	 * remove data from storage.
-	 * @param key
-	 */
-	public void Remove(Guid key);
-}
+		/**
+		* save data storage
+		* @param key
+		* @param data
+		* @return
+		*/
+		public void Store(Guid key, string data, long expectedDuration);
+		
+		/**
+		* retrieve and remove data from storage
+		* @param key
+		* @return
+		*/
+		public String Retrieve(Guid key);
+		
+		/**
+		* remove data from storage.
+		* @param key
+		*/
+		public void Remove(Guid key);
+	}
 }

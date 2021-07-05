@@ -7,9 +7,9 @@
     using System.Linq;
     using System.Threading;
 
-    using asyncMemManager.Common;
+    using AsyncMemManager.Common;
 
-    public class AsyncMemManager : IAsyncMemManager
+    public class AsyncMemManagerImpl : IAsyncMemManager
     {        
         // this is for special marker only.
         private static readonly ManagedObjectQueue<ManagedObjectBase> queuedForManageCandle = new ManagedObjectQueue<ManagedObjectBase>(0, null);
@@ -24,7 +24,7 @@
         private readonly IComparer<ManagedObjectBase> cacheNodeComparator = new CandleComparer();
 
 
-        public AsyncMemManager(Configuration config,
+        public AsyncMemManagerImpl(Configuration config,
                                     IHotTimeCalculator coldTimeCalculator, 
                                     IPersistence persistence) 
         {
@@ -49,7 +49,7 @@
             }
         }
 
-        public ISetupObject<T> Manage<T>(string flowKey, T obj, IAsyncMemSerializer<T> serializer) 
+        public ISetupObject<T> Manage<T>(string flowKey, T obj, IAsyncMemSerializer<T> serializer) where T : class
         {
             		// init key, mapKey, newnode
             if (obj == null)
@@ -157,7 +157,7 @@
                 
                 containerCandle.GetAndRemoveAt(managedObj.indexInCandle);
                 Interlocked.Add(ref this.usedSize, -managedObj.estimatedSize);							
-                managedObj.SetManagementState(AsyncMemManager.obsoletedManageCandle);
+                managedObj.SetManagementState(AsyncMemManagerImpl.obsoletedManageCandle);
                     
                 this.OfferCandleBackAfterClean(containerCandle);
             });
@@ -176,7 +176,7 @@
                 lock (managedObj) { 
                     if (state == managedObj.ManagementState) // state unchanged. 
                     { 
-                        containerCandle = managedObj.SetManagementState(AsyncMemManager.queuedForManageCandle);
+                        containerCandle = managedObj.SetManagementState(AsyncMemManagerImpl.queuedForManageCandle);
                         queued = true;
                     }
                 }
@@ -267,7 +267,7 @@
 	
         private void PersistObject(ManagedObjectBase managedObject)
         {
-            if (Interlocked.Read(ref managedObject.asyncCounter) > 0)
+            if (managedObject.asyncCounter > 0)
             {
                 ReadWriteLock<ManagedObjectBase> locker = managedObject.LockManage();
                 if(managedObject.obj != null && !managedObject.IsObsoleted())
@@ -321,52 +321,107 @@
             }
         }
 
-        private class AsyncMemManagerContainObject
+        private class AsyncMemManagerObjectContainer
         {
-            protected readonly AsyncMemManager manager;
-            protected AsyncMemManagerContainObject(AsyncMemManager m)
+            protected readonly AsyncMemManagerImpl manager;
+            protected readonly ManagedObjectBase managedObj;
+            protected AsyncMemManagerObjectContainer(AsyncMemManagerImpl m, ManagedObjectBase o)
             {
                 this.manager = m;
+                this.managedObj = o;
             }
         }
 	
-        private class SetupObject<T> : AsyncMemManagerContainObject, ISetupObject<T>
+        private class SetupObject<T> : AsyncMemManagerObjectContainer, ISetupObject<T> where T : class
         {            
-            public SetupObject(AsyncMemManager manager, ManagedObjectBase obj) : base (manager){
+            public SetupObject(AsyncMemManagerImpl manager, ManagedObjectBase obj) : base (manager, obj){
             }
 
             public IAsyncObject<T> AsyncO()
-            {
-                return null;
+            {                
+                return new AsyncObject<T>(this.manager, managedObj);
             }
 
             public T O()
-            {
-                return default(T);
+            {                
+			    return (T) this.managedObj.obj;
             }
 
-            public void Dispose(){
-                
+            public void Close(){
+                this.managedObj.doneSetup = true;
+                if (this.managedObj.asyncCounter > 0)
+                {
+                    this.manager.Track(this.managedObj);
+                }
+            }
+
+            public void Dispose(){                
+                this.Close();
             }
         }
         
-        private class AsyncObject<T> : AsyncMemManagerContainObject, IAsyncObject<T>
+        private class AsyncObject<T> : AsyncMemManagerObjectContainer, IAsyncObject<T> where T : class
         {		           
-            public AsyncObject(AsyncMemManager manager, ManagedObjectBase obj) : base (manager){
+            public AsyncObject(AsyncMemManagerImpl manager, ManagedObjectBase obj) : base (manager, obj){
+                Interlocked.Increment(ref this.managedObj.asyncCounter);
             }
 
             public R Supply<R>(Func<T,R> f)
             {
-                return default(R);
+         		ReadWriteLock<ManagedObjectBase> locker = this.managedObj.LockRead();
+                this.LoadFromStoreIfNeeded(locker);
+                R res = f(this.managedObj.obj as T);
+                locker.Unlock();			
+                this.TrackIfNeeded();
+                return res;
             }
+
             public void Apply(Action<T> f)
             {
-                return ;
+                ReadWriteLock<ManagedObjectBase> locker = this.managedObj.LockRead();
+                this.LoadFromStoreIfNeeded(locker);
+                f(this.managedObj.obj as T);
+                locker.Unlock();			
+                this.TrackIfNeeded();
+            }
+
+            public void Close()
+            {
+                if (Interlocked.Decrement(ref this.managedObj.asyncCounter) == 0 && this.managedObj.doneSetup)
+                {
+                    this.manager.RemoveFromManagement(this.managedObj);
+                }
             }
 
             public void Dispose(){
-
+                this.Close();
             }
+		
+            private void LoadFromStoreIfNeeded(ReadWriteLock<ManagedObjectBase> currentReadlock) {
+                if (this.managedObj.obj == null)
+                {
+                    ReadWriteLock<ManagedObjectBase> manageLock = currentReadlock.Upgrade();
+                    if (this.managedObj.obj == null) 
+                    {
+                        this.managedObj.obj = this.managedObj.serializer.Deserialize<T>(this.manager.persistence.Retrieve(this.managedObj.key));
+                    }
+                    
+                    manageLock.Downgrade();
+                } 
+                
+                DateTime now = DateTime.Now;
+                long waittime = (long)(now - this.managedObj.startTime).TotalMilliseconds;
+                this.manager.hotTimeCalculator.Stats(this.manager.config, this.managedObj.flowKey, this.managedObj.numberOfAccess, waittime);
+                this.managedObj.startTime = now;
+                this.managedObj.numberOfAccess++;
+            }
+            
+            private void TrackIfNeeded() {
+                if (this.managedObj.asyncCounter > 0 && this.managedObj.doneSetup)
+                {
+                    this.manager.Track(this.managedObj);
+                }
+            }            
         }
         
         private abstract class ManagedObjectBase : IndexableQueuedObject, IReadWriteLockableObject
@@ -438,10 +493,10 @@
             /**
             * counting of async flows, object stop to be managed when all aync closed
             */
-            internal long asyncCounter = 0;
+            internal volatile int asyncCounter = 0;
             
             internal bool IsObsoleted() {
-                return this.doneSetup && Interlocked.Read(ref this.asyncCounter) == 0;
+                return this.doneSetup && this.asyncCounter == 0;
             }
             
             /**
@@ -456,9 +511,9 @@
                         if (c == null)
                         {
                             return ManagementState.None;
-                        }else if (c == AsyncMemManager.queuedForManageCandle){
+                        }else if (c == AsyncMemManagerImpl.queuedForManageCandle){
                             return ManagementState.Queued;
-                        }else if (c == AsyncMemManager.obsoletedManageCandle){
+                        }else if (c == AsyncMemManagerImpl.obsoletedManageCandle){
                             return ManagementState.Obsoleted;
                         }else {
                             return ManagementState.Managing;
@@ -560,16 +615,15 @@
             private Func<object, long> estimateObjectSizeFunc;
             
             // it's ok to in-thread safe here, as object override wouldn't cause any issue.
-            public static SerializerGeneral GetSerializerBaseInstance<T>(IAsyncMemSerializer<T> serializer)
+            public static SerializerGeneral GetSerializerBaseInstance<T>(IAsyncMemSerializer<T> serializer) where T : class
             {
                 
-                if(SerializerGeneral.instances.TryGetValue(serializer.GetType(), out SerializerGeneral inst) 
-                    && inst == null)
+                if(!(SerializerGeneral.instances.TryGetValue(serializer.GetType(), out SerializerGeneral inst) && inst != null))
                 {
                     inst = new SerializerGeneral();
 
                     inst.serialzeFunc = (obj) => {
-                        return serializer.Serialize((T)obj);
+                        return serializer.Serialize(obj as T);
                     };		
                     
                     inst.deserializeFunc = (data) => {
@@ -577,7 +631,7 @@
                     };
                     
                     inst.estimateObjectSizeFunc = (obj) => {
-                        return serializer.EstimateObjectSize((T)obj);
+                        return serializer.EstimateObjectSize(obj as T);
                     };
 
                     SerializerGeneral.instances.Add(serializer.GetType(), inst);
@@ -594,12 +648,12 @@
                 return this.serialzeFunc(obj);
             }
             
-            public T deserialize<T>(string data)
+            public T Deserialize<T>(string data) where T : class
             {
-                return (T)this.deserializeFunc(data);
+                return this.deserializeFunc(data) as T;
             }
             
-            public long estimateObjectSize(object obj)
+            public long EstimateObjectSize(object obj)
             {
                 return this.estimateObjectSizeFunc(obj);
             }

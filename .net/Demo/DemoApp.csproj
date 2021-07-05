@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net5.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Common/AsyncMemManager.Common.csproj" />    
+    <ProjectReference Include="../Client/AsyncMemManager.Client.csproj" />    
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Program.cs" />
+    <Content Include="TestEntity.cs" />
+  </ItemGroup>  
+</Project>

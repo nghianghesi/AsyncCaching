@@ -31,7 +31,6 @@ public class DemoApp {
 		HotTimeCalculator hotTimeCalculator = new AvgWaitTimeCalculator(500);
 		AsyncMemManager memManager = new asyncMemManager.client.AsyncMemManager(config, hotTimeCalculator, memCachePersistence);
 		
-		// TODO Auto-generated method stub
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();
 		int n = 10000;
 		for (int i=0; i<n; i++)

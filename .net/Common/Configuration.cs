@@ -1,4 +1,4 @@
-namespace AsyncMemManager.Client.DI
+namespace AsyncMemManager.Common
 {
     using System;
     using System.Collections.Generic;
