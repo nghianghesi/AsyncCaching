@@ -36,6 +36,11 @@ the POC include of
     + "Cold" data may be persisted to disk to save memory (similar to AsyncMemManager)
     + Note: To run asyncMemManager.server, we need folder to save data, which is currently hardcode as <USER_HOME>/async-caching
 - DemoApp, this is aync code using AsyncMemManager, even with -Xmx64m, 10K tasks can bequeued and run properly.
+- .net Demo app same implementation for .net
+- To run demo: 
+    + create <user-home>/async-caching
+    + run asyncMemManager.server
+    + run demoApp (.net or/and java version)  
 
 # Problems need to be solved
   + Colisions in MemManager when multiple threads access, remove, persisting to mem, reload ... objects.
