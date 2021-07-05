@@ -9,9 +9,7 @@ namespace AsyncMemManager.Client
         private IAsyncCachingREST asyncCachingApi;
         public MemCacheServerPersistence(string asyncCachingUrl)
         {
-            var httpClient = new HttpClient(new HttpClientDiagnosticsHandler(new HttpClientHandler())) { BaseAddress = new Uri(asyncCachingUrl) };
-
-            this.asyncCachingApi = Refit.RestService.For<IAsyncCachingREST>(httpClient);
+            this.asyncCachingApi = Refit.RestService.For<IAsyncCachingREST>(asyncCachingUrl);
         }
 
 		public void Store(Guid key, string data, long expectedDuration)

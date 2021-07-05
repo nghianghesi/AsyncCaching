@@ -12,6 +12,5 @@
     <Content Include="AvgWaitTimeCalculator.cs" />
     <Content Include="di\IAsyncMemManager.cs" />
     <Content Include="MemCacheServerPersistence.cs" />
-    <Content Include="HttpClientDiagnosticsHandler.cs" />
   </ItemGroup>
 </Project>
