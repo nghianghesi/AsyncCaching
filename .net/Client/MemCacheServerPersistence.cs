@@ -2,19 +2,24 @@ namespace AsyncMemManager.Client
 {
     using System;
     using System.Threading.Tasks;
-    using System.Net.Http;
+    using RestSharp;
 
     public class MemCacheServerPersistence : DI.IPersistence
     {
-        private IAsyncCachingREST asyncCachingApi;
+        private RestClient client;
+
         public MemCacheServerPersistence(string asyncCachingUrl)
         {
-            this.asyncCachingApi = Refit.RestService.For<IAsyncCachingREST>(asyncCachingUrl);
+            this.client = new RestClient(asyncCachingUrl);
         }
 
 		public void Store(Guid key, string data, long expectedDuration)
         {
-            this.asyncCachingApi.Store(key, data, expectedDuration).Wait();
+            var request = new RestRequest("/cache/{key}/{expectedDuration}")
+                            .AddUrlSegment("key", key)
+                            .AddUrlSegment("expectedDuration", expectedDuration)
+                            .AddParameter("text/plain", data, ParameterType.RequestBody);
+            client.Post(request);
         }
 		
 		/**
@@ -24,7 +29,9 @@ namespace AsyncMemManager.Client
 		*/
 		public string Retrieve(Guid key)
         {
-            return this.asyncCachingApi.Retrieve(key).Result;
+            var request = new RestRequest("/cache/{key}")
+                .AddUrlSegment("key", key);
+            return client.Get<string>(request).Content;
         }
 		
 		/**
@@ -33,19 +40,9 @@ namespace AsyncMemManager.Client
 		*/
 		public void Remove(Guid key)
         {
-            this.asyncCachingApi.Remove(key).Wait();
+            var request = new RestRequest("/cache/{key}")
+                .AddUrlSegment("key", key);
+            this.client.Delete(request);
         }
-	
-        public interface IAsyncCachingREST
-        {
-            [Refit.Post("/cache/{key}/{expectedDuration}")]
-            public Task<string> Store([Refit.AliasAs("key")] Guid key, [Refit.Body] string data, [Refit.AliasAs("expectedDuration")] long expectedDuration);
-
-            [Refit.Get("/cache/{key}")]
-            public Task<string> Retrieve([Refit.AliasAs("key")] Guid key);
-
-            [Refit.Delete("/cache/{key}")]
-            public Task<string> Remove([Refit.AliasAs("key")]Guid key);
-        }        
     }
 }

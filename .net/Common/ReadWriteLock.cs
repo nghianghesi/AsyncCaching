@@ -26,7 +26,7 @@ namespace AsyncMemManager.Common{
                     }
                 }
 
-                Task.Yield();
+                Thread.Yield();
             }
         }
 
@@ -87,11 +87,11 @@ namespace AsyncMemManager.Common{
                             this.UnlockWhenSynced();
                         }
                     }
-                    Task.Yield();
+                    Thread.Yield();
                 }
 
                 while (this.lockedObject.LockStatus > 1) {
-                    Task.Yield();
+                    Thread.Yield();
                 }
                 
                 return this.updownLock = replaceLock;			

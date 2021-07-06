@@ -222,7 +222,7 @@
 
                 if(res == null)
                 {
-                    Task.Yield();
+                    Thread.Yield();
                 }
             }
 
@@ -241,7 +241,7 @@
 
                 if (!removed)
                 {
-                    Task.Yield();
+                    Thread.Yield();
                 }
             }
             return containerCandle;
@@ -332,7 +332,7 @@
                 
                 if (!isReduced)
                 {
-                    Task.Yield();
+                    Thread.Yield();
                 }
             }
         }
