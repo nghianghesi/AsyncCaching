@@ -82,6 +82,7 @@ public class DemoApp {
 		System.out.println("All tasks completed");
 		System.out.println(memManager.debugInfo());
 		executor.shutdown();
+		otherExecutor.shutdown();
 		
 		try {
 			memManager.close();
