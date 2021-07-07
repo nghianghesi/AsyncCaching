@@ -11,6 +11,7 @@ namespace AsyncMemManager.Client
         public MemCacheServerPersistence(string asyncCachingUrl)
         {
             this.client = new RestClient(asyncCachingUrl);
+            this.client.ThrowOnAnyError = true;
         }
 
 		public void Store(Guid key, string data, long expectedDuration)
@@ -19,7 +20,11 @@ namespace AsyncMemManager.Client
                             .AddUrlSegment("key", key)
                             .AddUrlSegment("expectedDuration", expectedDuration)
                             .AddParameter("text/plain", data, ParameterType.RequestBody);
-            client.Post(request);
+            var res = client.Post(request);
+            if ((int)res.StatusCode != 200)
+            {
+                Console.WriteLine("Failed to store");
+            }
         }
 		
 		/**
@@ -31,7 +36,8 @@ namespace AsyncMemManager.Client
         {
             var request = new RestRequest("/cache/{key}")
                 .AddUrlSegment("key", key);
-            return client.Get<string>(request).Content;
+            var response = client.Get<string>(request);            
+            return response.Content;
         }
 		
 		/**

@@ -447,6 +447,7 @@
             * also used as key for synchronize access vs management
             */
             internal readonly Guid key;
+            internal readonly object keyLocker = new object();
             
             /**
             * flow key, this is used for estimate waiting time
@@ -589,7 +590,7 @@
                 this.readWriteCounter += lockfactor;
             }
             
-            public object LockerKey => this.key;
+            public object LockerKey => this.keyLocker;
         }
         
         [Flags]
@@ -673,6 +674,6 @@
             {
                 return this.estimateObjectSizeFunc(obj);
             }
-        }        
+        }    
     }
 }
