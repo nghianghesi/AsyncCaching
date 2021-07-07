@@ -2,21 +2,29 @@ namespace AsyncMemManager.Client
 {
     using System;
     using System.Threading.Tasks;
-    using System.Net.Http;
+    using RestSharp;
 
     public class MemCacheServerPersistence : DI.IPersistence
     {
-        private IAsyncCachingREST asyncCachingApi;
+        private RestClient client;
+
         public MemCacheServerPersistence(string asyncCachingUrl)
         {
-            var httpClient = new HttpClient(new HttpClientDiagnosticsHandler(new HttpClientHandler())) { BaseAddress = new Uri(asyncCachingUrl) };
-
-            this.asyncCachingApi = Refit.RestService.For<IAsyncCachingREST>(httpClient);
+            this.client = new RestClient(asyncCachingUrl);
+            this.client.ThrowOnAnyError = true;
         }
 
 		public void Store(Guid key, string data, long expectedDuration)
         {
-            this.asyncCachingApi.Store(key, data, expectedDuration).Wait();
+            var request = new RestRequest("/cache/{key}/{expectedDuration}")
+                            .AddUrlSegment("key", key)
+                            .AddUrlSegment("expectedDuration", expectedDuration)
+                            .AddParameter("text/plain", data, ParameterType.RequestBody);
+            var res = client.Post(request);
+            if ((int)res.StatusCode != 200)
+            {
+                Console.WriteLine("Failed to store");
+            }
         }
 		
 		/**
@@ -26,7 +34,10 @@ namespace AsyncMemManager.Client
 		*/
 		public string Retrieve(Guid key)
         {
-            return this.asyncCachingApi.Retrieve(key).Result;
+            var request = new RestRequest("/cache/{key}")
+                .AddUrlSegment("key", key);
+            var response = client.Get<string>(request);            
+            return response.Content;
         }
 		
 		/**
@@ -35,19 +46,9 @@ namespace AsyncMemManager.Client
 		*/
 		public void Remove(Guid key)
         {
-            this.asyncCachingApi.Remove(key).Wait();
+            var request = new RestRequest("/cache/{key}")
+                .AddUrlSegment("key", key);
+            this.client.Delete(request);
         }
-	
-        public interface IAsyncCachingREST
-        {
-            [Refit.Post("/cache/{key}/{expectedDuration}")]
-            public Task<string> Store([Refit.AliasAs("key")] Guid key, [Refit.Body] string data, [Refit.AliasAs("expectedDuration")] long expectedDuration);
-
-            [Refit.Get("/cache/{key}")]
-            public Task<string> Retrieve([Refit.AliasAs("key")] Guid key);
-
-            [Refit.Delete("/cache/{key}")]
-            public Task<string> Remove([Refit.AliasAs("key")]Guid key);
-        }        
     }
 }

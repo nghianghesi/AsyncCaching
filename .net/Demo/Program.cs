@@ -60,15 +60,39 @@
                     Console.WriteLine(memManager.DebugInfo());
                 }));
 
-                setupEntity.Close();
+                tasks.Add(DoSomethingOther(setupEntity, idx)
+                            .ContinueWith((_)=>{
+                                Console.WriteLine("Other: " + memManager.DebugInfo());
+                            }));                
 
+                setupEntity.Close();
                 Thread.Sleep(2 + new Random().Next(10));
             }
 
             Console.WriteLine("All task queued");
-            Task.WaitAll(tasks.ToArray());            
+            foreach (Task t in tasks)
+            {
+                t.Wait();
+            }
             Console.WriteLine("All task completed");
             Console.WriteLine(memManager.DebugInfo());
+        }
+
+        private static Task DoSomethingOther(ASMC.DI.ISetupObject<TestEntity> setupEntity, int idx)
+        {
+            ASMC.DI.IAsyncObject<TestEntity> e = setupEntity.AsyncO();
+            return Task.Run(()=> {
+                            Console.WriteLine("1st Other "+ idx + " " + e.Supply((o) => o.GetSomeText()));
+
+                            Thread.Sleep(50 + new Random().Next(50));
+                        }).ContinueWith((_) => {
+                            e.Close();
+                                                
+                            e.Apply((o) => {
+                                Console.WriteLine("2nd Other "+ idx + " " + o.GetSomeText());
+                            });
+                            Thread.Sleep(150 + new Random().Next(50));
+                        });
         }
     }
 }

@@ -4,14 +4,13 @@
     <TargetFramework>net5.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="RestSharp" Version="106.11.7" />
     <ProjectReference Include="../Common/AsyncMemManager.Common.csproj" />
-    <PackageReference Include="refit" Version="6.0.38" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="AsyncMemManagerImpl.cs" />
     <Content Include="AvgWaitTimeCalculator.cs" />
     <Content Include="di\IAsyncMemManager.cs" />
     <Content Include="MemCacheServerPersistence.cs" />
-    <Content Include="HttpClientDiagnosticsHandler.cs" />
   </ItemGroup>
 </Project>
