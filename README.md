@@ -11,7 +11,12 @@ obj.doSomeSetup()
 doSomeTimeConsumingJobs().thenRunAsync(() -> {
                     obj.handleResult()
                  }); 
-// doSomeTimeConsumingJobs could be complex calculating, other API calling, database reading 
+                 
+obj.doSomeOtherSetup()
+doSomeOtherTimeConsumingJobs().thenRunAsync(() -> {
+                    obj.handleOtherResult()
+                 }); 
+// doSomeTimeConsumingJobs, doSomeOtherTimeConsumingJobs could be complex calculating, other API calling, database reading 
 // which return a FutureCompletable (A promise in js, or a Task in .NET) ...
 ```              
               
