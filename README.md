@@ -54,6 +54,12 @@ the POC include of
 
 # Detail Design (Comming)
   + Object diagram
+     - each application object is wrapped in a ManagedObject, then stored in (queue) candles. 
+     - Expected accessing (hot) time will be calculated by stats preivous accessing.
+     - when memory over capacity, those object in coldest state (ETA of accessing is far) will be serialized and persisted to Async Caching Server.
+     - Similarly in Caching server, when memory over capacity, those coldest data will be persisted to file. 
+     - By these collobration, memory in app and caching server will never over limitation.
+     - When aplication object is requested via ManagedObject, it will be deserialized if required from Caching server (and data reloaded from file).
   
 ![AsyncMemManager](https://user-images.githubusercontent.com/46674635/123992309-2047e500-d991-11eb-9085-6da9d4f4742c.png)
 
