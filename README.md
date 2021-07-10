@@ -52,6 +52,17 @@ the POC include of
   + Colisions in AsyncCache when multiple requests access, remove, persisting to file, reload ... data.
   + Efficient design to optimize accessing performance, so that lest affect to the AyncApp.
 
+# Performance analys:
+  + As serialize and deserialize is mandortary for every caching design, Further more, this is optimized by calculate the waiting time from previous access, so It's not counting here
+  + At AsyncMemManager:
+     - Access application object via managedObject is O(1)
+     - Find & remove coldest object from candles (to reserve spaces) is O(log N), this also optimized by the hottime stats to reduce the removing
+  + Sililar to Caching server:
+     - Access object's data via key mapping --> O(1)
+     - Find & remove coldest object from candles (to reserve spaces) is O(log N), this also optimized by the hottime stats to reduce the removing
+  + Using multiple candle here to reduce the collision (optimize for multi-threading)
+  ==> Performance is look good sofar, TODO: more detail matrics.
+  
 # Detail Design (Comming)
   + Object diagram
      - each application object is wrapped in a ManagedObject, then stored in (queue) candles. 
