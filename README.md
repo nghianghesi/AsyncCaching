@@ -47,11 +47,20 @@ the POC include of
     + run asyncMemManager.server
     + run demoApp (.net or/and java version)  
 
-# Problems need to be solved
-  + Colisions in MemManager when multiple threads access, remove, persisting to mem, reload ... objects.
-  + Colisions in AsyncCache when multiple requests access, remove, persisting to file, reload ... data.
+# Problems (need to be) solved
+  + Colisions in MemManager|AsyncCache when multiple threads access, remove, persisting to mem|file, reload ... objects. This problem solved by   
+     * Pool of candles (queues) to store/remove object, so each time only one thread accessing candle
+     * Synchronized exec action, to ensure only 1 action interacting with Managed Object
+     * read/write locking to avoid data conflict
+  + Colisions in AsyncCache when multiple threads access, remove, persisting to file, reload ... data. This problem solved by   
+     * Concurrent map to store key to data
+     * Pool of candles (queues) to store/remove data, so each time only one thread accessing candle
+     * Queue actions to execute on CachedData (only one action/time interact with data)
   + Efficient design to optimize accessing performance, so that lest affect to the AyncApp.
-
+     * Directly accessing to object via AsyncObject
+     * CachedData is shared structure between Concurrent Map and queue.
+     * Bidirectional ManagedObject <--> Candle and CachedData <--> Candle for more effiency removal.  
+  + Stats hot time baseon previous acessing to optimize number of persist/reload
 # Performance analys:
   + As serialize and deserialize is mandortary for every caching design, Further more, this is optimized by calculate the waiting time from previous access, so It's not counting here
   + At AsyncMemManager:
