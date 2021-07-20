@@ -29,7 +29,7 @@ There couple of patterns to solve this issue, like throttling to limit number of
 AsyncMemManager is a POC design of other way to solve this problem by manage those objects. The idea is wrapping those objects into containers and auto persist those objects lately referenced to save memory. When objects are looked up, AsyncMemManager auto restore them from storage if required.
 
 # Then
-Even with just small memory capacity, almost un-limit number of tasks can be queued, and Async can be as is, no need complex design for throttling, re-circle tasks ...
+Even with just small memory capacity, almost un-limit number of tasks can be queued, and Async can be as is, no need complex design for throttling, re-circle tasks, caching ...
 For ex: in DemoApp, **10000 tasks** queued by as-is Async-programing and run properly, stable, and fast as normal. 
 
 # Demo
