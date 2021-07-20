@@ -12,7 +12,7 @@
     {
         static void Main(string[] args)
         {
-            int capacity = 400 * TestEntity.LARGE_PROPERTY_SIZE;
+            int capacity = 300 * TestEntity.LARGE_PROPERTY_SIZE;
             int initialSize = 20;
             int cleanupInterval = 3600;
             int candlePoolSize = 10;
