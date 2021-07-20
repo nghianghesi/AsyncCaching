@@ -18,6 +18,7 @@ import asyneMemManager.clientDemo.model.TestEntity;
 public class DemoApp {
 
 	public static void main(String[] args) {
+		ExecutorService requestExecutor = Executors.newFixedThreadPool(10);
 		ExecutorService executor = Executors.newFixedThreadPool(10);		
 		ExecutorService otherExecutor = Executors.newFixedThreadPool(5);
 
@@ -32,6 +33,8 @@ public class DemoApp {
 		HotTimeCalculator hotTimeCalculator = new AvgWaitTimeCalculator(500);
 		AsyncMemManager memManager = new asyncMemManager.client.AsyncMemManager(config, hotTimeCalculator, memCachePersistence);
 		
+		DemoApiClient demoApiClient = new DemoApiClient("http://localhost:8080/");
+		
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();
 		int n = 10000;
 		for (int i=0; i<n; i++)
@@ -41,33 +44,29 @@ public class DemoApp {
 			final AsyncMemManager.AsyncObject<TestEntity> e3 = setupEntity.asyncObject();
 			final int idx = i;
 			
-			CompletableFuture<Void> t = CompletableFuture.runAsync(()->{
-				System.out.println("1st Async "+ idx + " " + e12.supply((o)-> getSomeText(o)));
-				ThreadSleep(50 + new Random().nextInt(50));
-			}, executor);
-			tasks.add(t);
+			CompletableFuture<String> t = CompletableFuture.supplyAsync(() -> demoApiClient.doSomeThing(), requestExecutor);
 			
 			tasks.add(
-				t.thenRunAsync(()->{					
+				t.thenAcceptAsync((s)->{					
 					CloseAsyncObject(e12); // close as this is last e12 access
 					
-					e12.apply((o) ->{ System.out.println("2nd Async "+ idx +" "+ getSomeText(o)); });
+					e12.apply((o) ->{ System.out.println(s + " Then 2nd Async "+ idx +" "+ getSomeText(o)); });
 					
 					System.out.println(memManager.debugInfo());					
 					ThreadSleep(100 + new Random().nextInt(50));
 				}, executor));
 			
-			tasks.add(t.thenRunAsync(()->{				
+			tasks.add(t.thenAcceptAsync((s)->{				
 					CloseAsyncObject(e3); // close as this is last e3 access
 					
-					System.out.println("3rd Async "+ idx +" "+ e3.supply((o)-> getSomeText(o)));
+					System.out.println(s + " Then 3rd Async "+ idx +" "+ e3.supply((o)-> getSomeText(o)));
 					
 					System.out.println(memManager.debugInfo());
 					
 					ThreadSleep(150 + new Random().nextInt(50));
 				}, executor));
 			
-			tasks.add(DoSomethingOther(otherExecutor, setupEntity, idx)
+			tasks.add(DoSomethingOther(demoApiClient, requestExecutor, otherExecutor, setupEntity, idx)
 					.whenComplete((r,e) -> {
 						System.out.println("Other: " + memManager.debugInfo());
 					}));
@@ -83,6 +82,7 @@ public class DemoApp {
 		System.out.println(memManager.debugInfo());
 		executor.shutdown();
 		otherExecutor.shutdown();
+		requestExecutor.shutdown();
 		
 		try {
 			memManager.close();
@@ -132,21 +132,17 @@ public class DemoApp {
 		return "";
 	}
 	
-	private static CompletableFuture<Void> DoSomethingOther(ExecutorService otherExecutor, AsyncMemManager.SetupObject<TestEntity> setupEntity, int idx)
+	private static CompletableFuture<Void> DoSomethingOther(DemoApiClient demoApiClient,ExecutorService requestExecutor, ExecutorService otherExecutor, AsyncMemManager.SetupObject<TestEntity> setupEntity, int idx)
 	{
 		final AsyncMemManager.AsyncObject<TestEntity> e = setupEntity.asyncObject();
 
 		
-		return CompletableFuture.runAsync(()->{
-			System.out.println("1st Other "+ idx + " " + e.supply((o) -> getSomeText(o)));
-			
-			ThreadSleep(50 + new Random().nextInt(50));
-		}, otherExecutor)
-		.thenRunAsync(()->{					
+		return CompletableFuture.supplyAsync(() -> demoApiClient.doSomeOtherThing(), requestExecutor)
+		.thenAcceptAsync((s)->{					
 				CloseAsyncObject(e);// close as this is last access
 				
 				e.apply((o) ->{
-					System.out.println("2nd Other "+ idx +" "+ getSomeText(o));
+					System.out.println(s + " Then 2nd Other "+ idx +" "+ getSomeText(o));
 				});
 				ThreadSleep(100 + new Random().nextInt(50));
 			}, otherExecutor);

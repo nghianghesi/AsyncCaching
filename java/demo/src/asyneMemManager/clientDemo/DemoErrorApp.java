@@ -14,7 +14,8 @@ public class DemoErrorApp {
 
 	public static void main(String[] args) {
 		ExecutorService executor = Executors.newFixedThreadPool(5);
-		
+		DemoApiClient demoApiClient = new DemoApiClient("http://localhost:8080/");
+
 		// TODO Auto-generated method stub
 		List<CompletableFuture<Void>> tasks = new ArrayList<>();
 		int n = 2000;
@@ -24,20 +25,7 @@ public class DemoErrorApp {
 			final TestEntity e = TestEntity.initLargeObject();
 			final int idx = i;
 			
-			CompletableFuture<Void> t=CompletableFuture.runAsync(()->{
-				try {
-					System.out.println("1st Async "+ idx + e.getSomeText());
-				} catch (InvalidObjectException e2) {
-					// TODO Auto-generated catch block
-					e2.printStackTrace();
-				}
-				try {
-					Thread.sleep(50 + new Random().nextInt(50));
-				} catch (InterruptedException e1) {
-					// TODO Auto-generated catch block
-					e1.printStackTrace();
-				}
-			}, executor); 
+			CompletableFuture<String> t=demoApiClient.doSomeOtherThingAsync();
 			tasks.add(
 				t.thenRunAsync(()->{
 					try {
