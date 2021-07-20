@@ -16,8 +16,9 @@ obj.doSomeOtherSetup()
 doSomeOtherTimeConsumingJobs().thenRunAsync(() -> {
                     obj.handleOtherResult()
                  }); 
-// doSomeTimeConsumingJobs, doSomeOtherTimeConsumingJobs could be complex calculating, other API calling, database reading 
-// which return a FutureCompletable (A promise in js, or a Task in .NET) ...
+// where doSomeTimeConsumingJobs, doSomeOtherTimeConsumingJobs could be 
+// complex calculating, other API calling, database operation ...
+// those return a FutureCompletable (A promise in js, or a Task in .NET ...) 
 ```              
               
 because obj is referred inside async task, so it's maintained in memory. If we queue big number of tasks like this, memory may be overflowed. For ex: in DemoErrorApp, with **2000 tasks** being queued, it's quickly get Memory Overflow Exception
