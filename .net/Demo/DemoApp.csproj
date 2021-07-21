@@ -5,11 +5,14 @@
     <TargetFramework>net5.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="RestSharp.Newtonsoft.Json" Version="1.5.1" />
     <ProjectReference Include="../Common/AsyncMemManager.Common.csproj" />
     <ProjectReference Include="../Client/AsyncMemManager.Client.csproj" />
+    <PackageReference Include="RestSharp" Version="106.11.7" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Program.cs" />
     <Content Include="TestEntity.cs" />
+    <Content Include="DemoRESTClient.cs" />
   </ItemGroup>
 </Project>

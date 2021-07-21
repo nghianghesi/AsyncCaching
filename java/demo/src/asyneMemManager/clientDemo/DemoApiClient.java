@@ -29,7 +29,6 @@ public class DemoApiClient {
 		Retrofit retrofit = new Retrofit.Builder()
 	            .client(client)
 			    .baseUrl(apiUrl)
-			    .addConverterFactory(ScalarsConverterFactory.create())
 			    .addConverterFactory(GsonConverterFactory.create())
 			    .build();
 		
