@@ -23,6 +23,8 @@
             ASMC.DI.IHotTimeCalculator hotTimeCalculator = new ASMC.AvgWaitTimeCalculator(500);
             ASMC.DI.IAsyncMemManager memManager = new ASMC.AsyncMemManagerImpl(config, hotTimeCalculator, memCachePersistence);
 
+            DemoRESTClient demoClient = new DemoRESTClient("http://localhost:8080/");
+
             List<Task> tasks = new List<Task>();
             int n = 10000;
             for (int i=0; i<n; i++)
@@ -32,35 +34,29 @@
                 ASMC.DI.IAsyncObject<TestEntity> e3 = setupEntity.AsyncO();
                 int idx = i;
 
-                var t = Task.Run(()=> {
-				    Console.WriteLine("1st Async "+ idx + " " + e12.Supply((o) => o.GetSomeText()));
+                var t = Task.Run(()=> demoClient.DoSomething());
 
-                    Thread.Sleep(50 + new Random().Next(50));
-
-                    Console.WriteLine(memManager.DebugInfo());
-                });
-
-                tasks.Add(t.ContinueWith((_)=>{
+                tasks.Add(t.ContinueWith((tr)=>{
                     e12.Close();
 
 					e12.Apply((o) => {
-						Console.WriteLine("2nd Async "+ idx +" "+ o.GetSomeText());
+						Console.WriteLine(tr.Result + " Then 2nd Async "+ idx +" "+ o.GetSomeText());
 					});
 
                     Thread.Sleep(100 + new Random().Next(50));
                     Console.WriteLine(memManager.DebugInfo());
                 }));
 
-                tasks.Add(t.ContinueWith((_)=>{
+                tasks.Add(t.ContinueWith((tr)=>{
                     e3.Close();
                     					
-					Console.WriteLine("3rd Async "+ idx + " " + e3.Supply((o) => o.GetSomeText()));
+					Console.WriteLine(tr.Result + " Then 3rd Async "+ idx + " " + e3.Supply((o) => o.GetSomeText()));
 
                     Thread.Sleep(150 + new Random().Next(50));
                     Console.WriteLine(memManager.DebugInfo());
                 }));
 
-                tasks.Add(DoSomethingOther(setupEntity, idx)
+                tasks.Add(DoSomethingOther(demoClient, setupEntity, idx)
                             .ContinueWith((_)=>{
                                 Console.WriteLine("Other: " + memManager.DebugInfo());
                             }));                
@@ -78,18 +74,14 @@
             Console.WriteLine(memManager.DebugInfo());
         }
 
-        private static Task DoSomethingOther(ASMC.DI.ISetupObject<TestEntity> setupEntity, int idx)
+        private static Task DoSomethingOther(DemoRESTClient demoClient, ASMC.DI.ISetupObject<TestEntity> setupEntity, int idx)
         {
             ASMC.DI.IAsyncObject<TestEntity> e = setupEntity.AsyncO();
-            return Task.Run(()=> {
-                            Console.WriteLine("1st Other "+ idx + " " + e.Supply((o) => o.GetSomeText()));
-
-                            Thread.Sleep(50 + new Random().Next(50));
-                        }).ContinueWith((_) => {
+            return Task.Run(()=> demoClient.DoSomeOtherthing()).ContinueWith((tr) => {
                             e.Close();
                                                 
                             e.Apply((o) => {
-                                Console.WriteLine("2nd Other "+ idx + " " + o.GetSomeText());
+                                Console.WriteLine(tr.Result + " Then 2nd Other "+ idx + " " + o.GetSomeText());
                             });
                             Thread.Sleep(150 + new Random().Next(50));
                         });
