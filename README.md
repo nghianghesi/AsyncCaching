@@ -1,5 +1,6 @@
 # AsyncMemManager
-A design for memory management which auto caching "cold" items to save memory, auto restore when item requested in async programing.
+A design for memory management which auto caching "cold" items to save memory, auto restore when item requested in async programing, can be applied for both, not limited to, Java, .NET
+Used technologies: Spring Boot, REST, Java 8+ asynchronous, .NET Core, Asynchrnous by Task, REST client ... 
 
 # Given
 Async programming is key paradism in microservices, however nothing fit for all, and Async aslo have multi drawbacks, one of them is overflow memory. For example, in a very popular code template like this.
@@ -33,7 +34,7 @@ Even with just small memory capacity, almost un-limit number of tasks can be que
 For ex: in DemoApp, **10000 tasks** queued by as-is Async-programing and run properly, stable, and fast as normal. 
 
 # Demo
-the POC include of 
+The POC include of 
 - DemoErrorApp, this is demo for very common Async code, which 2000 task would quickly got Memeory overflow exception when run with -Xmx64m (assume memory is limitted)
 - asyncMemManager.server, this is Spring boot based async memCache server, it's not like others memCach like Rdis or memcached.org. It's specifically designed for AsyncMemManager which
     + Auto remove object after single retrieving 
