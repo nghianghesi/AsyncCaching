@@ -31,10 +31,10 @@ AsyncMemManager is a POC design of other way to solve this problem by manage tho
 
 # Then
 Even with just small memory capacity, almost un-limit number of tasks can be queued, and Async can be as is, no need complex design for throttling, re-circle tasks, caching ...
-For ex: in DemoApp, **10000 tasks** queued by as-is Async-programing and run properly, stable, and fast as normal. 
+For ex: in DemoApp, **10000++ tasks** queued by as-is Async-programing and run properly, stable, and fast as normal. 
 
 # Demo
-The POC include of 
+The demo is a very common case: call time-consuming service api, then handle response. It includes
 - DemoErrorApp, this is demo for very common Async code, which 2000 task would quickly got Memeory overflow exception when run with -Xmx64m (assume memory is limitted)
 - asyncMemManager.server, this is Spring boot based async memCache server, it's not like others memCach like Rdis or memcached.org. It's specifically designed for AsyncMemManager which
     + Auto remove object after single retrieving 
@@ -47,7 +47,7 @@ The POC include of
 - To run demo: 
     + create <user-home>/async-caching
     + run asyncMemManager.server
-    + run demoApp (.net or/and java version)  
+    + run demoErrorApp or demoApp (signle or multiple instances, .net or/and java version)  
 
 # Problems (need to be) solved
   + Colisions in MemManager|AsyncCache when multiple threads access, remove, persisting to mem|file, reload ... objects. This problem solved by   
