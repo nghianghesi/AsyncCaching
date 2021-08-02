@@ -2,17 +2,13 @@ package asyneMemManager.clientDemo;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
-import retrofit2.converter.scalars.ScalarsConverterFactory;
 import retrofit2.http.GET;
 
 public class DemoApiClient {
@@ -45,26 +41,6 @@ public class DemoApiClient {
 		}
 	}
 	
-	public CompletableFuture<String> doSomeThingAsync(){
-		CompletableFuture<String> res = new CompletableFuture<String>();
-		
-		this.restClient.doSomeThing().enqueue(new Callback<String>() 
-		{		     
-		    @Override
-		    public void onResponse(Call<String> call, Response<String> response) 
-		    {
-		    	res.complete(response.body());
-		    }
-		 
-		    @Override
-		    public void onFailure(Call<String> call, Throwable t) 
-		    {
-		    	res.complete("Do something failed");
-		    }
-		});
-		return res;
-	}
-	
 	public String doSomeOtherThing(){
 		try {
 			return this.restClient.doSomeOtherThing().execute().body();
@@ -74,28 +50,9 @@ public class DemoApiClient {
 			return "Do some other thing failed";
 		}
 	}
-
-	public CompletableFuture<String> doSomeOtherThingAsync(){
-
-		CompletableFuture<String> res = new CompletableFuture<String>();
-		this.restClient.doSomeOtherThing().enqueue(new Callback<String>() 
-		{		     
-		    @Override
-		    public void onResponse(Call<String> call, Response<String> response) 
-		    {
-		    	res.complete(response.body());
-		    }
-		 
-		    @Override
-		    public void onFailure(Call<String> call, Throwable t)
-		    {
-		    	res.complete("Do some other thing failed");
-		    }
-		});
-		return res;
-	}
 	
-	
+    // don't use async request here, as it cause memory overflow when large amount of request queued.
+    // instead, leverage AsycnMemManger + task to queue it.
 	private static interface DemoREST
 	{
 		@GET("/demo/dosomething")

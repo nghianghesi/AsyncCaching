@@ -1,7 +1,6 @@
 namespace AsyncMemManager.Client
 {
     using System;
-    using System.Threading.Tasks;
     using RestSharp;
 
     public class MemCacheServerPersistence : DI.IPersistence
