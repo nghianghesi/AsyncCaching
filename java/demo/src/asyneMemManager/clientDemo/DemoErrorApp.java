@@ -13,7 +13,9 @@ import asyneMemManager.clientDemo.model.TestEntity;
 public class DemoErrorApp {	
 
 	public static void main(String[] args) {
-		ExecutorService executor = Executors.newFixedThreadPool(5);
+		ExecutorService executor = Executors.newFixedThreadPool(10);
+		ExecutorService requestExecutor = Executors.newFixedThreadPool(10);
+		
 		DemoApiClient demoApiClient = new DemoApiClient("http://localhost:8080/");
 
 		// TODO Auto-generated method stub
@@ -25,7 +27,7 @@ public class DemoErrorApp {
 			final TestEntity e = TestEntity.initLargeObject();
 			final int idx = i;
 			
-			CompletableFuture<String> t=demoApiClient.doSomeOtherThingAsync();
+			CompletableFuture<String> t = CompletableFuture.supplyAsync(() -> demoApiClient.doSomeThing(), requestExecutor);
 			tasks.add(
 				t.thenRunAsync(()->{
 					try {
